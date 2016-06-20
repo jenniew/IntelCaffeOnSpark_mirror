@@ -32,7 +32,7 @@ private[caffe] class LmdbPartition(idx: Int, val startKey: Array[Byte], val size
  * @param lmdb_path URI of LMDB databases
  * @param numPartitions # of the desired partitions.
  */
-
+// (id, label, channels, height, width, encoded, matData)
 class LmdbRDD(@transient val sc: SparkContext, val lmdb_path: String, val numPartitions: Int)
   extends RDD[(String, String, Int, Int, Int, Boolean, Array[Byte])](sc, Nil) with Logging {
   @transient var env: Env = null

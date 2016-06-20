@@ -62,10 +62,10 @@ CaffeNet<Dtype>::CaffeNet(const string& solver_conf_file, const string& model_fi
         input_adapter_[i].reset();
         if (solver_mode_ != Caffe::GPU)
             d++;
-        else {
-            d = Caffe::GrabDevice(d + 1);
-            CHECK_GE(d, 0) << "cannot grab GPU device";
-        }
+//        else {
+//            d = Caffe::GrabDevice(d + 1);
+//            CHECK_GE(d, 0) << "cannot grab GPU device";
+//        }
         local_devices_[i] = d;
     }
 
@@ -93,7 +93,7 @@ CaffeNet<Dtype>::CaffeNet(const string& solver_conf_file, const string& model_fi
     CHECK_GT(max_iter, 0);
     local_solver_param.set_snapshot(max_iter);
 
-    // turn off test 
+    // turn off test
     local_solver_param.set_test_interval(max_iter);
     local_solver_param.set_test_initialization(false);
 
