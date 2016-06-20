@@ -1,5 +1,9 @@
 ## General
 
+.tags
+.tags_sorted_by_file
+caffe-bundle/
+caffe-grid/src/main/python/
 # Compiled Object files
 *.slo
 *.lo
