@@ -60,6 +60,12 @@ class SocketChannel {
   int port_no;
   string peer_name;
   size_t size;
+  string peer_info() {
+      std::stringstream sstm;
+      sstm << "peer_name: " << peer_name << " port_no: " << port_no
+           << " client_fd: " << client_fd << " serving_fd: " << serving_fd;
+      return sstm.str();
+  }
 };
 
 class SocketBuffer {
@@ -78,7 +84,7 @@ class SocketBuffer {
   // Synchronously writes content to remote peer
   void Write();
   SocketBuffer* Read();
- protected:
+ //protected:
   SocketChannel* channel_;
   uint8_t* addr_;
   uint8_t* buffer_;

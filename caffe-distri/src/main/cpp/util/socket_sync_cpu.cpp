@@ -97,11 +97,14 @@ SocketSyncCPU<Dtype>::~SocketSyncCPU() {
 template<typename Dtype>
 void SocketSyncCPU<Dtype>::on_start() {
   // Send weights to each node
+  LOG(INFO) << "on_start sending weights to each node";
   sync();
+  LOG(INFO) << "on_start end of sending weights";
 }
 
 template<typename Dtype>
 void SocketSyncCPU<Dtype>::on_gradients_ready() {
+  LOG(INFO) << "start to sync gradients";
   // Reduce gradients from local CPU.
   P2PSyncCPU<Dtype>::on_gradients_ready();
   // Send gradients to corresponding parameter server node
@@ -125,10 +128,12 @@ void SocketSyncCPU<Dtype>::on_gradients_ready() {
     caffe_add(own_size_, src, dst, dst);
     peer++;
   }
+  LOG(INFO) << "end of sync gradients";
 }
 
 template<typename Dtype>
 void SocketSyncCPU<Dtype>::sync() {
+  LOG(INFO) << "start to sync";
   // Send weights to each peer
   int peer = rank_ + 1;  // To avoid all sending to same peer at
   // the same time
@@ -145,9 +150,12 @@ void SocketSyncCPU<Dtype>::sync() {
     if (peer == peers_.size()) {
       peer = 0;
     }
+//    LOG(INFO) << "start to pop data from queue, peer: " << peer ;
     data_recv_[peer]->Read();
+//    LOG(INFO) << "end of  pop data from queue, peer: " << peer ;
     peer++;
   }
+  LOG(INFO) << "end of sync";
 }
 
 INSTANTIATE_CLASS(SocketSyncCPU);
