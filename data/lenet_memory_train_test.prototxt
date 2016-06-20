@@ -7,9 +7,9 @@ layer {
   include {
     phase: TRAIN
   }
-  source_class: "com.yahoo.ml.caffe.LMDB"
+  source_class: "com.yahoo.ml.caffe.ImageDataFrame"
   memory_data_param {
-    source: "file:/Users/mridul/bigml/demodl/mnist_train_lmdb"
+    source: "hdfs://Gondolin-Node-040:9000/caffe/data/mnist/mnist_train_parquet"
     batch_size: 64
     channels: 1
     height: 28
@@ -22,21 +22,28 @@ layer {
 }
 layer {
   name: "data"
-  type: "MemoryData"
+  type: "MemoryData" #"Data"
   top: "data"
   top: "label"
   include {
     phase: TEST
   }
-  source_class: "com.yahoo.ml.caffe.LMDB"
-  memory_data_param {
-    source: "file:/Users/mridul/bigml/demodl/mnist_test_lmdb/"
-    batch_size: 100
-    channels: 1
-    height: 28
-    width: 28
-    share_in_parallel: false
-  }
+#    data_param {
+#      source: "/home/arda/bin/CaffeOnSpark_intel/data/mnist_test_lmdb"
+#      batch_size: 100
+#      backend: LMDB
+#    }
+
+     source_class: "com.yahoo.ml.caffe.ImageDataFrame"
+     memory_data_param {
+       source: "hdfs://Gondolin-Node-040:9000/caffe/data/mnist/mnist_train_parquet"
+       batch_size: 64
+       channels: 1
+       height: 28
+       width: 28
+       share_in_parallel: false
+     }
+
   transform_param {
     scale: 0.00390625
   }
