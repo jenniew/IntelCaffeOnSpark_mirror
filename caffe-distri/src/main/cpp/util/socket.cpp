@@ -35,33 +35,46 @@ struct message_header{
   int size;  // Payload size to follow the header
 };
 
+void send_all(int sockfd, void *vbuffer, int len) {
+    uint8_t* buffer = reinterpret_cast<uint8_t*>(vbuffer);
+    int nsent;
+    while(len > 0) {
+        nsent = write(sockfd, buffer, len);
+        if (nsent == -1) {
+            LOG(ERROR) << "ERROR: Sending message header!";  exit(1);
+        }
+        DLOG(INFO) << "Send nsent:len " << nsent << ":" << len;
+        buffer += nsent;
+        len -= nsent;
+    }
+}
+
+void read_all(int sockfd, void *vbuffer, int len) {
+    uint8_t* buffer = reinterpret_cast<uint8_t*>(vbuffer);
+    int nread;
+    while(len > 0) {
+        nread = read(sockfd, buffer, len);
+        if (nread == -1) {
+           LOG(ERROR) << "ERROR: Reading message header!";
+           exit(1);
+        }
+        buffer += nread;
+        len -= nread;
+    }
+}
+
+
 bool send_message_header(int sockfd, int rank, message_type mt, int ms) {
   message_header mh;
   mh.rank = rank;
   mh.type = mt;
   mh.size = ms;
-  int n = write(sockfd, &mh, sizeof(mh));
-  if (n < 0) {
-    LOG(ERROR) << "ERROR: Sending message header!";    return false;
-  } else if (n < sizeof(mh)) {
-    LOG(ERROR) << "ERROR: Sending partial message header!";
-    return false;
-  }
+  send_all(sockfd, &mh, sizeof(mh));
   return true;
 }
 
 void receive_message_header(int sockfd,message_header * mh) {
-  
-  int n = read(sockfd, mh, sizeof(*mh));
-  if (n < 0) {
-    LOG(ERROR) << "ERROR: Reading message header!";
-    pthread_exit(NULL);
-  }
-  else if (n < sizeof(*mh)) {
-    LOG(ERROR) << "ERROR: Read partial messageheader ["
-               << n <<" of " << sizeof(*mh) << "]";
-    pthread_exit(NULL);
-  }
+    read_all(sockfd, mh, sizeof(*mh));
 }
 
 struct connection_details {
@@ -81,6 +94,8 @@ void *client_connection_handler(void *metadata) {
   struct message_header mh;
   while (1) {
     receive_message_header(cd->serving_fd, &mh);
+    LOG(INFO) << "receive message_header: from_rank , type, size" << mh.rank << " " << mh.type << " " << mh.size ;
+
     // FIXME: The condition where socket server gets a connection
     // from the peer but the user didn't allocate a SocketChannel
     // for the peer.This can even happen if adapter is instantiated
@@ -88,13 +103,13 @@ void *client_connection_handler(void *metadata) {
     // For now assume the user will maintain the right order i.e
     // allocate a SocketChannel for all peers and then instantiate
     // the adapter.
-    /*      if(cd->sa->channels.size() < mh.rank || cd->sq->channels.at(mh.rank) == NULL){
+    if(cd->sa->channels->size() < mh.rank || cd->sa->channels->at(mh.rank) == NULL){
             printf("ERROR:No SocketChannel assigned for the peer with rank [%d]...terminating the thread handler\n", mh.rank);
             // FIXME: Notify the client and exit
-            pthread_exit();
+            pthread_exit(NULL);
             }
-    */
-    // From the peer rank locate the local SocketChannel for that
+
+    // From the peer rank locate the local lSocketChannel for that
     // peer and sets it's serving_fd
     SocketChannel* sc = cd->sa->channels->at(mh.rank).get();
     sc->serving_fd = cd->serving_fd;
@@ -102,16 +117,18 @@ void *client_connection_handler(void *metadata) {
     uint8_t* marker = read_buffer;
     int cur_cnt = 0;
     int max_buff = 0;
+    DLOG(INFO) << "client_connection_handler: start to read from " << mh.rank << " " << sc->peer_info();
+
     while (cur_cnt < mh.size) {
       if ((mh.size - cur_cnt) > 256)
         max_buff = 256;
       else
         max_buff = mh.size - cur_cnt;
-
       int n = read(sc->serving_fd, marker, max_buff);
       marker = marker + n;
       cur_cnt = cur_cnt + n;
     }
+    DLOG(INFO) << "client_connection_handler: finished read cur_cnt, from : " << cur_cnt << ", " << mh.rank<< ", " << sc->peer_info();
     // Wrap the received message in an object QueuedMessage and
     // push it to the local receive queue of the peer's
     // SocketChannel
@@ -119,6 +136,7 @@ void *client_connection_handler(void *metadata) {
                                           mh.size, read_buffer);
     sc->receive_queue.push(mq);
   }
+  delete cd;
   return NULL;
 }
 
@@ -347,16 +365,20 @@ void SocketBuffer::Write() {
   }
   int cur_cnt = 0;
   int max_buff = 0;
+
+  DLOG(INFO) << "start sending data to channel->peer_name " << channel_->peer_name << " this->size " << this->size_;
   while (cur_cnt < this->size_) {
     if ((this->size_ - cur_cnt) > 256)
       max_buff = 256;
     else
       max_buff = this->size_ - cur_cnt;
-
+//    LOG(INFO) << "start of loop write peer, cur_cnt " << channel_->peer_name << " , " << cur_cnt;
     int n = write(channel_->client_fd, marker, max_buff);
     marker = marker + n;
     cur_cnt = cur_cnt + n;
+//    LOG(INFO) << "end of loop write peer, cur_cnt " << channel_->peer_name << " , " << cur_cnt;
   }
+  DLOG(INFO) << "end of sending data to channel->peer_name " << channel_->peer_name;
 }
 
 SocketBuffer* SocketBuffer::Read() {
@@ -415,7 +437,7 @@ Socket::Socket(const string& host, int port, bool listen) {
     ::listen(fd_, 1);
   }
 }
-  
+
   Socket::~Socket() {
     close(fd_);
   }
