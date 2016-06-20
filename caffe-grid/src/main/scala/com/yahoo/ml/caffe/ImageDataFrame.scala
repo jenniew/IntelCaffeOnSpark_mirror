@@ -69,6 +69,6 @@ class ImageDataFrame(conf: Config, layerId: Int, isTrain: Boolean)
           }
         }
         (id, label, channels, height, width, encoded, data)
-      }).persist(StorageLevel.DISK_ONLY)
+      })//.persist(StorageLevel.MEMORY_AND_DISK)
   }
 }
