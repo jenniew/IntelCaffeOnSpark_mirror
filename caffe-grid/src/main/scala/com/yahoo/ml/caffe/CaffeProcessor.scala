@@ -15,13 +15,22 @@ import scala.concurrent.{Await, Future, ExecutionContext}
 import org.apache.spark.sql.Row
 
 private[caffe] object CaffeProcessor {
+  val log: Logger = LoggerFactory.getLogger(this.getClass)
+
   var myInstance: CaffeProcessor[_, _] = null
 
-  def instance[T1, T2](source: DataSource[T1, T2], rank: Int): CaffeProcessor[T1, T2] = {
-    myInstance = new CaffeProcessor[T1, T2](source, rank)
-    myInstance.asInstanceOf[CaffeProcessor[T1, T2]]
+  def instance[T1, T2](source: DataSource[T1, T2], rank: Int): CaffeProcessor[T1, T2] = synchronized {
+    try {
+      myInstance = new CaffeProcessor[T1, T2](source, rank)
+      myInstance.asInstanceOf[CaffeProcessor[T1, T2]]
+    } catch {
+      case t: Throwable => {
+        log.error("Cannot init CaffeProcessor: ", t)
+        throw t
+      }
+    }
   }
-
+  // Assuming it would be always created at this point.
   def instance[T1, T2](): CaffeProcessor[T1, T2] = {
     myInstance.asInstanceOf[CaffeProcessor[T1, T2]]
   }
