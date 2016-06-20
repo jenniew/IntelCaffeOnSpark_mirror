@@ -1,0 +1,13 @@
+----------------------------------------------------------------
+Wed May 25 12:45:21 CST 2016:
+Booting Derby version The Apache Software Foundation - Apache Derby - 10.10.1.1 - (1458268): instance a816c00e-0154-e63b-37cf-00024621d2e8 
+on database directory /home/arda/bin/CaffeOnSpark_intel/models/bvlc_alexnet/metastore_db with class loader org.apache.spark.sql.hive.client.IsolatedClientLoader$$anon$1@7780ef7d 
+Loaded from file:/home/arda/bin/spark-1.6.0-bin-hadoop2.6/lib/spark-assembly-1.6.0-hadoop2.6.0.jar
+java.vendor=Oracle Corporation
+java.runtime.version=1.7.0_79-b15
+user.dir=/home/arda/bin/CaffeOnSpark_intel/models/bvlc_alexnet
+os.name=Linux
+os.arch=amd64
+os.version=4.2.0-35-generic
+derby.system.home=null
+Database Class Loader started - derby.database.classpath=''
