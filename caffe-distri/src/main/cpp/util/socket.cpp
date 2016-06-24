@@ -33,6 +33,16 @@ struct message_header{
   int rank;
   message_type type;  // For DIFF vs DATA
   int size;  // Payload size to follow the header
+  int iter_count;
+
+  string header_info() {
+      std::stringstream sstm;
+	  sstm <<  "rank: " << this->rank
+		   << " size: "<< this->size
+		   << " type " << this->type
+	       << " iter_count " << this->iter_count;
+	  return sstm.str();
+  }
 };
 
 void send_all(int sockfd, void *vbuffer, int len) {
@@ -63,12 +73,15 @@ void read_all(int sockfd, void *vbuffer, int len) {
     }
 }
 
-
-bool send_message_header(int sockfd, int rank, message_type mt, int ms) {
+bool send_message_header(int sockfd, int rank, int iter_count, message_type mt, int ms) {
   message_header mh;
   mh.rank = rank;
   mh.type = mt;
   mh.size = ms;
+  mh.iter_count = iter_count;
+
+  DLOG(INFO) << "sending header_info : " << mh.header_info();
+
   send_all(sockfd, &mh, sizeof(mh));
   return true;
 }
@@ -82,10 +95,12 @@ struct connection_details {
   SocketAdapter* sa;
 };
 
-QueuedMessage::QueuedMessage(message_type type, int size, uint8_t* buffer) {
+QueuedMessage::QueuedMessage(int _rank, int iter_count, message_type type, int size, uint8_t* buffer) {
+  this->rank = _rank;
   this->type = type;
   this->size = size;
   this->buffer = buffer;
+  this->iter_count_ = iter_count;
 }
 
 // Handle each peer connection in their own handlers
@@ -94,7 +109,7 @@ void *client_connection_handler(void *metadata) {
   struct message_header mh;
   while (1) {
     receive_message_header(cd->serving_fd, &mh);
-    LOG(INFO) << "receive message_header: from_rank , type, size" << mh.rank << " " << mh.type << " " << mh.size ;
+    LOG(INFO) << "receive message_header from: " << cd->sa->channels->at(mh.rank)->peer_info();
 
     // FIXME: The condition where socket server gets a connection
     // from the peer but the user didn't allocate a SocketChannel
@@ -104,10 +119,11 @@ void *client_connection_handler(void *metadata) {
     // allocate a SocketChannel for all peers and then instantiate
     // the adapter.
     if(cd->sa->channels->size() < mh.rank || cd->sa->channels->at(mh.rank) == NULL){
-            printf("ERROR:No SocketChannel assigned for the peer with rank [%d]...terminating the thread handler\n", mh.rank);
+            DLOG(INFO) << "ERROR:No SocketChannel assigned for the peer with rank [%d]...terminating the thread handler " << mh.rank;
             // FIXME: Notify the client and exit
             pthread_exit(NULL);
             }
+
 
     // From the peer rank locate the local lSocketChannel for that
     // peer and sets it's serving_fd
@@ -117,7 +133,7 @@ void *client_connection_handler(void *metadata) {
     uint8_t* marker = read_buffer;
     int cur_cnt = 0;
     int max_buff = 0;
-    DLOG(INFO) << "client_connection_handler: start to read from " << mh.rank << " " << sc->peer_info();
+    DLOG(INFO) << "client_connection_handler: start to read from: " << mh.rank << " " << sc->peer_info();
 
     while (cur_cnt < mh.size) {
       if ((mh.size - cur_cnt) > 256)
@@ -128,13 +144,21 @@ void *client_connection_handler(void *metadata) {
       marker = marker + n;
       cur_cnt = cur_cnt + n;
     }
-    DLOG(INFO) << "client_connection_handler: finished read cur_cnt, from : " << cur_cnt << ", " << mh.rank<< ", " << sc->peer_info();
+    DLOG(INFO) << "client_connection_handler: finished read from : " << mh.rank<< " " << sc->peer_info();
     // Wrap the received message in an object QueuedMessage and
     // push it to the local receive queue of the peer's
     // SocketChannel
-    QueuedMessage* mq = new QueuedMessage(mh.type,
+    QueuedMessage* mq = new QueuedMessage(mh.rank, mh.iter_count, mh.type,
                                           mh.size, read_buffer);
-    sc->receive_queue.push(mq);
+    if (mh.type == DIFF) {
+    	DLOG(INFO) << "pushing diff to globle queue";
+    	SocketChannel::global_diff_receive_queue.push(mq);
+        DLOG(INFO) << "end of pushing diff";
+    } else {
+        DLOG(INFO) << "pushing data to data queue";
+        SocketChannel::global_data_receive_queue.push(mq);
+        DLOG(INFO) << "end of pushing data queue";
+    }
   }
   delete cd;
   return NULL;
@@ -255,6 +279,9 @@ void SocketAdapter::start_sockt_srvr() {
   }
 }
 
+caffe::BlockingQueue<QueuedMessage*> SocketChannel::global_diff_receive_queue;
+caffe::BlockingQueue<QueuedMessage*> SocketChannel::global_data_receive_queue;
+
 // Connect called by client with inbuilt support for retries
 void SocketChannel::Connect(string peer) {
   bool retry = true;
@@ -342,49 +369,54 @@ SocketChannel::~SocketChannel() {
   this->size = 0;
 }
 
-SocketBuffer::SocketBuffer(int rank, SocketChannel* channel,
+SocketBuffer::SocketBuffer(int rank, int iterCount, message_type mt, SocketChannel* channel,
                            uint8_t* buffer, size_t size, uint8_t* addr) {
   this->rank = rank;
   this->channel_ = channel;
   this->buffer_ = buffer;
   this->size_ = size;
   this->addr_ = addr;
+  this->mt_ = mt;
+  this->iterCount_ = iterCount;
 }
 
 void SocketBuffer::Write() {
+  LOG(INFO) << "Waiting for write lock " << this->iterCount_ << " " << channel_->peer_info() ;
+  boost::mutex::scoped_lock lock(this->channel_->write_mutex_);
+  LOG(INFO) << "Successfully get the write lock" << this->iterCount_ << " " << channel_->peer_info();
 #ifndef CPU_ONLY
     // Copy the buffer to be sent from GPU
     cudaMemcpy(this->buffer_, this->addr_, this->size_,  // NOLINT(caffe/alt_fn)
                cudaMemcpyDeviceToHost);  // NOLINT(caffe/alt_fn)
 #endif
   uint8_t* marker = reinterpret_cast<uint8_t*>(this->buffer());
+  LOG(INFO) << "start sending header to " << this->iterCount_ << " "<< channel_->peer_info() ;
+
   if (!send_message_header(channel_->client_fd,
-                           this->rank, DIFF, this->size_)) {
+                           this->rank, this->iterCount_, this->mt_, this->size_)) {
     LOG(ERROR) << "ERROR: Sending data from client";
     return;
   }
   int cur_cnt = 0;
   int max_buff = 0;
 
-  DLOG(INFO) << "start sending data to channel->peer_name " << channel_->peer_name << " this->size " << this->size_;
+  LOG(INFO) << "start sending data to " << this->iterCount_ << " "<< channel_->peer_info();
   while (cur_cnt < this->size_) {
     if ((this->size_ - cur_cnt) > 256)
       max_buff = 256;
     else
       max_buff = this->size_ - cur_cnt;
-//    LOG(INFO) << "start of loop write peer, cur_cnt " << channel_->peer_name << " , " << cur_cnt;
     int n = write(channel_->client_fd, marker, max_buff);
     marker = marker + n;
     cur_cnt = cur_cnt + n;
-//    LOG(INFO) << "end of loop write peer, cur_cnt " << channel_->peer_name << " , " << cur_cnt;
   }
-  DLOG(INFO) << "end of sending data to channel->peer_name " << channel_->peer_name;
+  LOG(INFO) << "end of sending data to " << this->iterCount_ << " "<< channel_->peer_info();
 }
 
 SocketBuffer* SocketBuffer::Read() {
   // Pop the message from local queue
   QueuedMessage* qm = reinterpret_cast<QueuedMessage*>
-    (this->channel_->receive_queue.pop());
+    (this->channel_->receive_queue.pop(string("trying to pop msg from queue")));
 #ifndef CPU_ONLY
     // Copy the received buffer to GPU memory
     CUDA_CHECK(cudaMemcpy(this->addr(), qm->buffer,  // NOLINT(caffe/alt_fn)
@@ -455,6 +487,5 @@ Socket::Socket(const string& host, int port, bool listen) {
   size_t Socket::write(void* buff, size_t size) {
     return ::write(fd_, buff, size);
   }
-
 }  // namespace caffe
 

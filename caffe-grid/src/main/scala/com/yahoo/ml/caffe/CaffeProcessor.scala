@@ -3,6 +3,8 @@
 // Please see LICENSE file in the project root for terms.
 package com.yahoo.ml.caffe
 
+import java.lang.Thread.UncaughtExceptionHandler
+import java.util
 import java.util.concurrent.{ArrayBlockingQueue, ForkJoinPool, ConcurrentHashMap}
 import java.util.ArrayList
 
@@ -17,9 +19,16 @@ import org.apache.spark.sql.Row
 private[caffe] object CaffeProcessor {
   val log: Logger = LoggerFactory.getLogger(this.getClass)
 
-  var myInstance: CaffeProcessor[_, _] = null
+  Thread.setDefaultUncaughtExceptionHandler(new UncaughtExceptionHandler {
+    override def uncaughtException(t: Thread, e: Throwable): Unit = {
+      log.error(s"uncatchexception in: ${t.getId} ${t.getName} ${t.getStackTrace} ", e)
+      System.exit(456)
+    }
+  })
 
-  def instance[T1, T2](source: DataSource[T1, T2], rank: Int): CaffeProcessor[T1, T2] = synchronized {
+  @volatile var myInstance: CaffeProcessor[_, _] = null
+
+  def instance[T1, T2](source: DataSource[T1, T2], rank: Int): CaffeProcessor[T1, T2] = {
     try {
       myInstance = new CaffeProcessor[T1, T2](source, rank)
       myInstance.asInstanceOf[CaffeProcessor[T1, T2]]
@@ -37,8 +46,8 @@ private[caffe] object CaffeProcessor {
 }
 
 private[caffe] class QueuePair[T]  {
-  val Free: ArrayBlockingQueue[T] = new ArrayBlockingQueue[T] (2)
-  val Full: ArrayBlockingQueue[T] = new ArrayBlockingQueue[T] (2)
+  val Free: ArrayBlockingQueue[T] = new ArrayBlockingQueue[T] (8)
+  val Full: ArrayBlockingQueue[T] = new ArrayBlockingQueue[T] (8)
 }
 
 private[caffe] class CaffeProcessor[T1, T2](val source: DataSource[T1, T2],
@@ -132,28 +141,22 @@ private[caffe] class CaffeProcessor[T1, T2](val source: DataSource[T1, T2],
 
     for (g <- 0 until numLocalGPUs) {
       val queuePair = new QueuePair[(Array[String], Array[FloatBlob], FloatBlob)]()
-
       if (source.isTrain) {
         //start solvers w/ only rank 0 will save model
         solvers.add(Future {
           doTrain(caffeNetList(0), g, queuePair)
         })
-        //start transformers
-        for (t <- 0 until conf.transform_thread_per_device)
-          transformers.add(Future {
-            doTransform(caffeNetList(0), g, queuePair, g)
-          })
       } else {
         //start solvers for test
         solvers.add(Future {
           doFeatures(caffeNetList(g), 0, queuePair)
         })
-        //start transformers
-        for (t <- 0 until conf.transform_thread_per_device)
-          transformers.add(Future {
-            doTransform(caffeNetList(g), 0, queuePair, g)
-          })
       }
+      //start transformers
+      for (t <- 0 until conf.transform_thread_per_device)
+        transformers.add(Future {
+          doTransform(caffeNetList(0), g, queuePair, g)
+        })
     }
     
     threadsStarted = true
@@ -166,12 +169,14 @@ private[caffe] class CaffeProcessor[T1, T2](val source: DataSource[T1, T2],
   }
 
   //feed data to train queue
+  // it would always the first few taks finished very fast and then block at 1024 size queue.
   def feedQueue(item: T1): Boolean = {
-    var offer_status = false
-    while (!solvers.get(0).isCompleted && !offer_status) {
-      offer_status = source.sourceQueue.offer(item)
-    }
-    !solvers.get(0).isCompleted
+//    var offer_status = false
+//    while (!solvers.get(0).isCompleted && !offer_status) { // a busy while loop? it want to check iscompleted. why not just use blocking put?
+//      offer_status = source.sourceQueue.offer(item)
+//    }
+    source.sourceQueue.put(item)
+    !solvers.get(0).isCompleted // solvers would always be single if CPU-ONLY, this is not a blocking method
   }
 
   //stop all threads
@@ -249,6 +254,7 @@ private[caffe] class CaffeProcessor[T1, T2](val source: DataSource[T1, T2],
       initialFreeQueue(queuePair)
 
       while (!solvers.get(solverIdx).isCompleted && source.nextBatch(sampleIds, dataHolder, labels)) {
+        log.info("Transforming original batch")
         if (transformer != null) {
           dataHolder match {
             case matVector: MatVector => {
@@ -278,6 +284,7 @@ private[caffe] class CaffeProcessor[T1, T2](val source: DataSource[T1, T2],
           tpl._3.copyFrom(labels)
           putIntoQueue(tpl, queuePair.Full, queueIdx)
         }
+        log.info("Successfully transformed an original batch")
       }
     }
     catch {
@@ -309,10 +316,12 @@ private[caffe] class CaffeProcessor[T1, T2](val source: DataSource[T1, T2],
       val maxIter: Int = caffeNet.getMaxIter(syncIdx)
       caffeNet.init(syncIdx, true)
       for (it <- initIter until maxIter if (tpl != STOP_MARK)) {
+        log.info("Going to take a transformed batch from queue")
         tpl = queuePair.Full.take
         if (tpl == STOP_MARK)  {
           queuePair.Free.put(tpl)
         } else {
+          log.info("Sucessfully took a valid transformed batch from queue")
           val rs : Boolean = caffeNet.train(syncIdx, tpl._2, toDataPtr(tpl._3))
           if (!rs) {
             log.warn("Failed at training at iteration "+it)

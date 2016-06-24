@@ -3,12 +3,30 @@
 // Please see LICENSE file in the project root for terms.
 #include <vector>
 #include "boost/algorithm/string.hpp"
-#include "boost/thread.hpp"
 #include "caffe/caffe.hpp"
 #include "util/socket_sync_cpu.hpp"
+#include <cstdlib>
+#include <iostream>
+#include <stdexcept>
+#include <execinfo.h>
+
 
 
 namespace caffe {
+
+void handler()
+{
+    void *trace_elems[20];
+    int trace_elem_count(backtrace( trace_elems, 20 ));
+    char **stack_syms(backtrace_symbols( trace_elems, trace_elem_count ));
+    for ( int i = 0 ; i < trace_elem_count ; ++i )
+    {
+        LOG(INFO) << stack_syms[i] ;
+    }
+    free( stack_syms );
+
+    exit(1);
+}
 
 template<typename Dtype>
 SocketSyncCPU<Dtype>::SocketSyncCPU(shared_ptr<Solver<Dtype> > root_solver,
@@ -20,8 +38,10 @@ SocketSyncCPU<Dtype>::SocketSyncCPU(shared_ptr<Solver<Dtype> > root_solver,
     data_send_(peers.size()),
     data_recv_(peers.size()),
     diff_send_(peers.size()),
-    diff_recv_(peers.size()) {
-
+    diff_recv_(peers.size()),
+	tp(peers.size()),
+	iter_count_(-1){
+  std::set_terminate( handler );
   chunk(rank_, &own_offs_, &own_size_);
   for (int peer = 0; peer < peers_.size(); ++peer) {
     if (peer == rank_) {
@@ -57,13 +77,13 @@ void SocketSyncCPU<Dtype>::CreateMasterBuffers(int peer) {
 
   // Send data from local (rank_) to remote (peer)
   uint8_t* data = reinterpret_cast<uint8_t*>(data_ + own_offs_);
-  data_send_[peer].reset(new SocketBuffer(this->rank_, channel, data,
+  data_send_[peer].reset(new SocketBuffer(this->rank_, -1, DATA, channel, data,
                                           size, NULL));
 
   // Recv diff from remote (peer) to local (rank_)
   uint8_t* buffer;
   buffer = reinterpret_cast<uint8_t*>(malloc(size));
-  diff_recv_[peer].reset(new SocketBuffer(this->rank_, channel, NULL,
+  diff_recv_[peer].reset(new SocketBuffer(this->rank_, -1, DIFF, channel, NULL,
                                           size, buffer));
 }
 
@@ -76,12 +96,12 @@ void SocketSyncCPU<Dtype>::CreateWorkerBuffers(int peer) {
 
   // Recv data from remote (peer) to local (rank_)
   uint8_t* data = reinterpret_cast<uint8_t*>(data_ + offs);
-  data_recv_[peer].reset(new SocketBuffer(this->rank_, channel, NULL,
+  data_recv_[peer].reset(new SocketBuffer(this->rank_, -1, DATA, channel, NULL,
                                           size, data));
 
   // Send diff from local (rank_) to remote (peer)
   uint8_t* diff = reinterpret_cast<uint8_t*>(diff_ + offs);
-  diff_send_[peer].reset(new SocketBuffer(this->rank_, channel,
+  diff_send_[peer].reset(new SocketBuffer(this->rank_, -1, DIFF, channel,
                                           diff, size, NULL));
 }
 
@@ -96,15 +116,21 @@ SocketSyncCPU<Dtype>::~SocketSyncCPU() {
 
 template<typename Dtype>
 void SocketSyncCPU<Dtype>::on_start() {
+  boost::mutex::scoped_lock lock(this->mutex_);
+  iter_count_++;
   // Send weights to each node
-  LOG(INFO) << "on_start sending weights to each node";
+  LOG(INFO) << "Start to send weights to each node. Iter: " << iter_count_;
   sync();
-  LOG(INFO) << "on_start end of sending weights";
+  LOG(INFO) << "End of sending weights to each node. Iter " << iter_count_;
+}
+
+void write_task(SocketBuffer * socketBuffer_ptr) {
+	socketBuffer_ptr->Write();
 }
 
 template<typename Dtype>
 void SocketSyncCPU<Dtype>::on_gradients_ready() {
-  LOG(INFO) << "start to sync gradients";
+  LOG(INFO) << "Start to send gradients. Iter: " << iter_count_;
   // Reduce gradients from local CPU.
   P2PSyncCPU<Dtype>::on_gradients_ready();
   // Send gradients to corresponding parameter server node
@@ -113,27 +139,23 @@ void SocketSyncCPU<Dtype>::on_gradients_ready() {
     if (peer == peers_.size()) {
       peer = 0;
     }
-    diff_send_[peer]->Write();
+    diff_send_[peer].get()->iterCount_ = this->iter_count_;
+    tp.schedule(boost::bind(write_task, diff_send_[peer].get()));
+   // async_write(diff_send_[peer].get());
     peer++;
   }
   // Sum gradients as they are received
-  peer = rank_ + 1;
   for (int n = 0; n < peers_.size() - 1; ++n) {
-    if (peer == peers_.size()) {
-      peer = 0;
-    }
-    SocketBuffer * buffer = diff_recv_[peer]->Read();
-    Dtype* src = reinterpret_cast<Dtype*>(buffer->addr());
+    shared_ptr<SocketBuffer> sBuffer_sptr = SocketChannel::read_next(diff_recv_, DIFF);
+    Dtype* src = reinterpret_cast<Dtype*>(sBuffer_sptr->addr());
     Dtype* dst = diff_ + own_offs_;
     caffe_add(own_size_, src, dst, dst);
-    peer++;
   }
-  LOG(INFO) << "end of sync gradients";
+  LOG(INFO) << "End of sending gradients. Iter: " << iter_count_;
 }
 
 template<typename Dtype>
 void SocketSyncCPU<Dtype>::sync() {
-  LOG(INFO) << "start to sync";
   // Send weights to each peer
   int peer = rank_ + 1;  // To avoid all sending to same peer at
   // the same time
@@ -141,21 +163,14 @@ void SocketSyncCPU<Dtype>::sync() {
     if (peer == peers_.size()) {
       peer = 0;
     }
-    data_send_[peer]->Write();
+    data_send_[peer].get()->iterCount_ = this->iter_count_;
+    tp.schedule(boost::bind(write_task, data_send_[peer].get()));
     peer++;
   }
 
-  peer = rank_ + 1;
   for (int n = 0; n < peers_.size() - 1; ++n) {
-    if (peer == peers_.size()) {
-      peer = 0;
-    }
-//    LOG(INFO) << "start to pop data from queue, peer: " << peer ;
-    data_recv_[peer]->Read();
-//    LOG(INFO) << "end of  pop data from queue, peer: " << peer ;
-    peer++;
+    SocketChannel::read_next(data_recv_, DATA);
   }
-  LOG(INFO) << "end of sync";
 }
 
 INSTANTIATE_CLASS(SocketSyncCPU);

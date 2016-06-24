@@ -65,7 +65,7 @@ void SocketSync<Dtype>::CreateMasterBuffers(int peer) {
   // Send data from local (rank_) to remote (peer)
   uint8_t* data = reinterpret_cast<uint8_t*>(data_ + own_offs_);
   uint8_t* dst_data = reinterpret_cast<uint8_t*>(malloc(size));
-  data_send_[peer].reset(new SocketBuffer(this->rank_, channel, dst_data,
+  data_send_[peer].reset(new SocketBuffer(this->rank_, -1, DATA, channel, dst_data,
                                           size, data));
 
   // Recv diff from remote (peer) to local (rank_)
@@ -73,7 +73,7 @@ void SocketSync<Dtype>::CreateMasterBuffers(int peer) {
 #ifndef CPU_ONLY
   CUDA_CHECK(cudaMalloc(&buffer, size));
 #endif
-  diff_recv_[peer].reset(new SocketBuffer(this->rank_, channel, NULL,
+  diff_recv_[peer].reset(new SocketBuffer(this->rank_, -1, DIFF, channel, NULL,
                                           size, buffer));
 }
 
@@ -86,13 +86,13 @@ void SocketSync<Dtype>::CreateWorkerBuffers(int peer) {
 
   // Recv data from remote (peer) to local (rank_)
   uint8_t* data = reinterpret_cast<uint8_t*>(data_ + offs);
-  data_recv_[peer].reset(new SocketBuffer(this->rank_, channel, NULL,
+  data_recv_[peer].reset(new SocketBuffer(this->rank_, -1, DATA, channel, NULL,
                                           size, data));
 
   // Send diff from local (rank_) to remote (peer)
   uint8_t* diff = reinterpret_cast<uint8_t*>(diff_ + offs);
   uint8_t* dst_diff = reinterpret_cast<uint8_t*>(malloc(size));
-  diff_send_[peer].reset(new SocketBuffer(this->rank_, channel,
+  diff_send_[peer].reset(new SocketBuffer(this->rank_, -1, DIFF, channel,
                                           dst_diff, size, diff));
 }
 
