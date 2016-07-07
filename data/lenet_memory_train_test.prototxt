@@ -36,7 +36,7 @@ layer {
 
      source_class: "com.yahoo.ml.caffe.ImageDataFrame"
      memory_data_param {
-       source: "hdfs://Gondolin-Node-040:9000/caffe/data/mnist/mnist_train_parquet"
+       source: "hdfs://Gondolin-Node-040:9000/caffe/data/mnist/mnist_test_parquet"
        batch_size: 64
        channels: 1
        height: 28
