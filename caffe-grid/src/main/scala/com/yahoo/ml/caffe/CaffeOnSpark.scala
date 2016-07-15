@@ -5,6 +5,7 @@ package com.yahoo.ml.caffe
 
 import java.io.{FileReader, PrintWriter}
 import java.net.InetAddress
+import java.util
 
 import caffe.Caffe._
 
@@ -160,12 +161,12 @@ class CaffeOnSpark(@transient val sc: SparkContext) extends Serializable {
     }.collect()
 
     //Phase 4: repartition RDD if needed
-//    log.info("Training dataset partition count: " + trainDataRDD.getNumPartitions + " -> " + conf.clusterSize)
-//    val newtrainDataRDD = trainDataRDD.coalesce(conf.clusterSize * 10, true)
-
 
     val origin_part_count = trainDataRDD.partitions.size
-    val desired_part_count = (300/conf.clusterSize)*conf.clusterSize //(origin_part_count / conf.clusterSize) * conf.clusterSize
+    if (conf.dataPartitions % conf.clusterSize != 0) {
+      throw new RuntimeException("dataPartitions % clusterSize != 0")
+    }
+    val desired_part_count = (conf.dataPartitions / conf.clusterSize ) * conf.clusterSize
     log.info("Training dataset partition count: " + origin_part_count + " -> " + desired_part_count)
     if (origin_part_count != desired_part_count) {
       trainDataRDD = trainDataRDD.coalesce(desired_part_count, true)
@@ -175,7 +176,7 @@ class CaffeOnSpark(@transient val sc: SparkContext) extends Serializable {
       if (size == 0) {
         throw new RuntimeException("empty partition")
       }
-      println("partition_size: " + size)
+      log.info("partition_size: " + size)
     }
 
     //Phase 5: find the minimum size of partitions
@@ -200,26 +201,21 @@ class CaffeOnSpark(@transient val sc: SparkContext) extends Serializable {
     var continue: Boolean = true
     while (continue) {
       //conduct training with dataRDD
-      continue = trainDataRDD.mapPartitions {
-        iter => {
-          if (iter.isEmpty) {
-            log.info("encounter zero partitions")
-            Iterator(true)
-          } else {
-            var res = false
-            //feed training data from iterator
-            val processor = CaffeProcessor.instance[T1, T2]()
-            if (!processor.solversFinished) {
-              if (minPartSize > 0) {
-                res = iter.take(minPartSize).map { sample => processor.feedQueue(sample) }.reduce(_ && _)
-              } else {
-                res = iter.map { sample => processor.feedQueue(sample) }.reduce(_ && _)
-              }
-              processor.solversFinished = !res
-            }
-            Iterator(res)
+      continue = trainDataRDD.mapPartitions { iter => {
+        var unfinished = false
+        //feed training data from iterator
+        val processor = CaffeProcessor.instance[T1, T2]()
+        if (!processor.solversFinished) {
+          var idx = 0
+          unfinished = iter.map { sample => {
+            idx += 1
+            if (idx <= minPartSize) processor.feedQueue(sample) else true
           }
+          }.reduce(_ && _)
         }
+        processor.solversFinished = !unfinished
+        Iterator(unfinished)
+      }
       }.reduce(_ && _)
     }
 

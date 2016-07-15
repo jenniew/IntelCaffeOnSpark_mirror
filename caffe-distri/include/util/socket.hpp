@@ -8,6 +8,9 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <boost/thread.hpp>
+#include <boost/bind.hpp>
+#include <boost/threadpool.hpp>
 #include "caffe/caffe.hpp"
 #include "caffe/common.hpp"
 #include "caffe/util/blocking_queue.hpp"
@@ -40,37 +43,17 @@ class SocketAdapter {
 enum message_type {DIFF, DATA};
 class QueuedMessage {
  public:
+  int rank;
+  int iter_count_;
   message_type type;
   int size;
   uint8_t* buffer;
-  QueuedMessage(message_type type, int size, uint8_t* buffer);
-};
-
-class SocketBuffer;
-class SocketChannel {
- private:
-  int connect_to_peer(string to_peer, string to_port);
- public:
-  SocketChannel();
-  ~SocketChannel();
-  void Connect(string peer);
-  int client_fd;
-  caffe::BlockingQueue<QueuedMessage*> receive_queue;
-  int serving_fd;
-  int port_no;
-  string peer_name;
-  size_t size;
-  string peer_info() {
-      std::stringstream sstm;
-      sstm << "peer_name: " << peer_name << " port_no: " << port_no
-           << " client_fd: " << client_fd << " serving_fd: " << serving_fd;
-      return sstm.str();
-  }
+  QueuedMessage(int _rank, int iter_count, message_type type, int size, uint8_t* buffer);
 };
 
 class SocketBuffer {
  public:
-  SocketBuffer(int rank, SocketChannel* channel,
+  SocketBuffer(int rank, int iterCount, message_type mt, SocketChannel* channel,
                uint8_t* buffer, size_t size, uint8_t* addr);
   uint8_t* addr() const {
     return addr_;
@@ -90,6 +73,56 @@ class SocketBuffer {
   uint8_t* buffer_;
   /*const*/ size_t size_;
   int rank;
+  message_type mt_;
+  int iterCount_;
+  string info() {
+      std::stringstream sstm;
+      sstm << "Iteration: " << iterCount_;
+      return sstm.str();
+  }
+};
+
+class SocketChannel {
+ private:
+  int connect_to_peer(string to_peer, string to_port);
+ public:
+  SocketChannel();
+  ~SocketChannel();
+  void Connect(string peer);
+  int client_fd;
+  caffe::BlockingQueue<QueuedMessage*> receive_queue;
+  int serving_fd;
+  int port_no;
+  string peer_name;
+  size_t size;
+  mutable boost::mutex write_mutex_;
+  string peer_info() {
+      std::stringstream sstm;
+      sstm << "peer_name: " << peer_name << " port_no: " << port_no
+           << " client_fd: " << client_fd << " serving_fd: " << serving_fd;
+      return sstm.str();
+  }
+
+  static boost::threadpool::pool tp;
+
+  static caffe::BlockingQueue<QueuedMessage*> global_diff_receive_queue;
+
+  static caffe::BlockingQueue<QueuedMessage*> global_data_receive_queue;
+
+  static shared_ptr<SocketBuffer> read_next(const vector<shared_ptr<SocketBuffer> > &buffers, const message_type &mt) {
+  	// Pop the message from local queue
+  	QueuedMessage* qm =
+  			reinterpret_cast<QueuedMessage*>(
+  					(mt == DIFF ? global_diff_receive_queue : global_data_receive_queue)
+  					.pop(string("trying to get message from queue")));
+    LOG(INFO) << "Iteration: " << qm->iter_count_ <<  " got a message from: " << " , " << buffers[qm->rank]->channel_->peer_info();
+  	shared_ptr<SocketBuffer> sb_sptr = buffers[qm->rank];
+  	memcpy(sb_sptr->addr_, qm->buffer, qm->size);
+  	// Free up the buffer and the wrapper object
+  	delete qm->buffer;
+  	delete qm;
+  	return sb_sptr;
+  }
 };
 
 class Socket {

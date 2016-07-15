@@ -66,6 +66,11 @@ class SocketSyncCPU : public P2PSyncCPU<Dtype> {
   using Params<Dtype>::size_;
   using Params<Dtype>::data_;
   using Params<Dtype>::diff_;
+
+  boost::threadpool::pool tp;
+  int iter_count_; // the iteration count start from 0
+  mutable boost::mutex mutex_;
+
   DISABLE_COPY_AND_ASSIGN(SocketSyncCPU);
 };
 

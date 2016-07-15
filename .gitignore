@@ -1,5 +1,5 @@
 ## General
-
+caffe-distri/metastore_db/
 .tags
 .tags_sorted_by_file
 caffe-bundle/
@@ -56,3 +56,5 @@ caffe-grid/src/main/python/
 
 # OSX dir files
 .DS_Store
+
+caffe-distri/.build_debug/

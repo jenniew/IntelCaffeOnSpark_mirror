@@ -29,6 +29,7 @@ class Config(sc: SparkContext) extends Serializable {
   private var _resize = false
   private var _connection = 0
   private var _clusterSize = 0
+  private var _dataPartitions = 0
   private var _train_data_layer_id = -1
   private var _test_data_layer_id = -1
   private var _transform_thread_per_device = 1
@@ -239,6 +240,10 @@ class Config(sc: SparkContext) extends Serializable {
    */
   def clusterSize_=(value: Int) = _clusterSize = value
 
+  def dataPartitions = _dataPartitions
+
+  def dataPartitions_=(value: Int) = _dataPartitions = value
+
   /**
    * Get layer ID of training data source
    */
@@ -334,7 +339,6 @@ class Config(sc: SparkContext) extends Serializable {
   }
 
   def this(sc: SparkContext, args: Array[String]) {
-
     this(sc)
     //parse CLI arguments
     val cmd: CommandLine = {
@@ -356,6 +360,7 @@ class Config(sc: SparkContext) extends Serializable {
       options.addOption("connection", "connection", true, "ethernet or infiniband (default)")
       options.addOption("resize", "resize", false, "resize input image")
       options.addOption("clusterSize", "clusterSize", true, "size of the cluster")
+      options.addOption("dataPartitions", "dataPartitions", true, "partitions of the input data")
       options.addOption("lmdb_partitions", "lmdb_partitions", true, "the # of LMDB RDD partitions. Default: cluster size")
       //used for dev purpose only
       options.addOption("imageRoot", "imageRoot", true, "image files' root")
@@ -399,8 +404,11 @@ class Config(sc: SparkContext) extends Serializable {
         else 1
       }
     }
-
-
+    dataPartitions = if (cmd.hasOption("dataPartitions")) {
+      Integer.parseInt(cmd.getOptionValue("dataPartitions"))
+    } else {
+      clusterSize
+    }
     features =
       if (cmd.hasOption("features")) {
         val features_str = cmd.getOptionValue("features")

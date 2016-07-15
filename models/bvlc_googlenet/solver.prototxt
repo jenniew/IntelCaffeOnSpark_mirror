@@ -11,6 +11,6 @@ gamma: 0.96
 max_iter: 10000000
 momentum: 0.9
 weight_decay: 0.0002
-snapshot: 40000
+snapshot: 1000
 snapshot_prefix: "bvlc_googlenet"
 solver_mode: CPU

@@ -97,6 +97,7 @@ abstract class ImageDataSource(conf: Config, layerId: Int, isTrain: Boolean)
     var mat: Mat = null
     var oldmat: Mat = null
     var count: Int = 0
+    log.info("Trying to get an original batch")
     while (count < batchSize_ && shouldContinue) {
       val sample = sourceQueue.take()
 
@@ -151,7 +152,7 @@ abstract class ImageDataSource(conf: Config, layerId: Int, isTrain: Boolean)
         }
       }
     }
-
+    log.info("Successfully got an original batch")
     shouldContinue
   }
 

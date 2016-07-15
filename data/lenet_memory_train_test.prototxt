@@ -28,6 +28,7 @@ layer {
   include {
     phase: TEST
   }
+
 #    data_param {
 #      source: "/home/arda/bin/CaffeOnSpark_intel/data/mnist_test_lmdb"
 #      batch_size: 100
@@ -43,7 +44,6 @@ layer {
        width: 28
        share_in_parallel: false
      }
-
   transform_param {
     scale: 0.00390625
   }
