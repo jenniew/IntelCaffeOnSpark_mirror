@@ -163,8 +163,8 @@ class CaffeOnSpark(@transient val sc: SparkContext) extends Serializable {
     //Phase 4: repartition RDD if needed
 
     val origin_part_count = trainDataRDD.partitions.size
-    if (conf.clusterSize % conf.clusterSize != 0) {
-      throw new RuntimeException("")
+    if (conf.dataPartitions % conf.clusterSize != 0) {
+      throw new RuntimeException("dataPartitions % clusterSize != 0")
     }
     val desired_part_count = (conf.dataPartitions / conf.clusterSize ) * conf.clusterSize
     log.info("Training dataset partition count: " + origin_part_count + " -> " + desired_part_count)

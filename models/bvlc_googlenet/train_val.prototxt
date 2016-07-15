@@ -14,7 +14,7 @@ layer {
   }
   source_class: "com.yahoo.ml.caffe.ImageDataFrame"
   memory_data_param {
-    source: "hdfs://Gondolin-Node-040:9000/caffe/data/imagenet/ilsvrc12_train_parquet"
+    source: "hdfs://Gondolin-Node-016:9000/caffe/data/imagenet/ilsvrc12_train_parquet"
     batch_size: 32
     channels: 3
     height: 224

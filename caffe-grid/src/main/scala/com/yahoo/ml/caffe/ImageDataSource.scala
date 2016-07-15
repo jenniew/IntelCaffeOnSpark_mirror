@@ -152,7 +152,7 @@ abstract class ImageDataSource(conf: Config, layerId: Int, isTrain: Boolean)
         }
       }
     }
-    log.info("Successfully got an original image for the batch")
+    log.info("Successfully got an original batch")
     shouldContinue
   }
 

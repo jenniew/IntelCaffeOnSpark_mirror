@@ -169,12 +169,8 @@ private[caffe] class CaffeProcessor[T1, T2](val source: DataSource[T1, T2],
   }
 
   //feed data to train queue
-  // it would always the first few taks finished very fast and then block at 1024 size queue.
   def feedQueue(item: T1): Boolean = {
-//    var offer_status = false
-//    while (!solvers.get(0).isCompleted && !offer_status) { // a busy while loop? it want to check iscompleted. why not just use blocking put?
-//      offer_status = source.sourceQueue.offer(item)
-//    }
+    // TODO: somehow we need to add solvers.get(0).isCompleted interruption here.
     source.sourceQueue.put(item)
     !solvers.get(0).isCompleted // solvers would always be single if CPU-ONLY, this is not a blocking method
   }
