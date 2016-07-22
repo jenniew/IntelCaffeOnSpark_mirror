@@ -10,7 +10,7 @@
 #include <vector>
 #include <boost/thread.hpp>
 #include <boost/bind.hpp>
-#include <boost/threadpool.hpp>
+#include "threadpool.hpp"
 #include "caffe/caffe.hpp"
 #include "caffe/common.hpp"
 #include "caffe/util/blocking_queue.hpp"
