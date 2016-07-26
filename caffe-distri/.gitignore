@@ -6,6 +6,7 @@
 src/main/java/caffe/Caffe.java
 include/jni/com_yahoo_ml_jcaffe_*.h
 .build_release
+.build_debug
 build
 distribute
 target
