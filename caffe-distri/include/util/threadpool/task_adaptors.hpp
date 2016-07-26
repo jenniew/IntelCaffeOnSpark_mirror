@@ -22,6 +22,11 @@
 #include <boost/function.hpp>
 #include <boost/thread.hpp>
 
+// Make program general to Mac OS X system
+#include <boost/version.hpp>
+#if BOOST_VERSION >= 105000
+#define TIME_UTC TIME_UTC_
+#endif
 
 namespace boost { namespace threadpool
 {
