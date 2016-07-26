@@ -1,7 +1,7 @@
 // Copyright 2016 Yahoo Inc.
 // Licensed under the terms of the Apache 2.0 license.
 // Please see LICENSE file in the project root for terms.
-#include "caffe/util/blocking_queue.cpp"
+#include "caffe/util/blocking_queue.hpp"
 #include "util/socket.hpp"
 
 #ifdef INFINIBAND
