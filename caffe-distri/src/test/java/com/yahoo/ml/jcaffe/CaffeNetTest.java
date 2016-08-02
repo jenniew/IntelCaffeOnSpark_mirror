@@ -162,6 +162,7 @@ public class CaffeNetTest {
 
         // Get weights from local caffe
         float[] weights = net.getLocalWeights();
+        float[] gradients;
 
         //simplified training
         System.out.print("CaffeNetTest training:");
@@ -170,6 +171,10 @@ public class CaffeNetTest {
             nextBatch(matVec, labelblob);
             xform.transform(matVec, data_blob);
             assertTrue(net.train(0, dataBlobs, labelblob.cpu_data()));
+
+            // Get gradients from local caffe test
+            gradients = net.getLocalGradients();
+            assertEquals(weights.length, gradients.length);
         }
 
         //simplified test

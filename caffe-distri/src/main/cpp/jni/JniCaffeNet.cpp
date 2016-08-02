@@ -335,6 +335,26 @@ JNIEXPORT jfloatArray JNICALL Java_com_yahoo_ml_jcaffe_CaffeNet_getLocalWeights
 
 /*
  * Class:     com_yahoo_ml_jcaffe_CaffeNet
+ * Method:    getLocalGradients
+ * Signature: ()[F
+ */
+JNIEXPORT jfloatArray JNICALL Java_com_yahoo_ml_jcaffe_CaffeNet_getLocalGradients
+(JNIEnv *env, jobject object) {
+    /* create a native CaffeNet object */
+    CaffeNet<float>* native_ptr = (CaffeNet<float>*) GetNativeAddress(env, object);
+    float* gradients = native_ptr->syncs_[0]->diff();
+    size_t len = native_ptr->syncs_[0]->size();
+    jfloatArray result;
+    result = env->NewFloatArray(len);
+    if (result == NULL) {
+        LOG(ERROR) << "Unable to create a new float array";
+        return 0;
+    }
+    env->SetFloatArrayRegion(result, 0, len, gradients);
+    return result;
+}
+/*
+ * Class:     com_yahoo_ml_jcaffe_CaffeNet
  * Method:    getInitIter
  * Signature: (I)I
  */

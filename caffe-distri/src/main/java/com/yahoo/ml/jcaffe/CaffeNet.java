@@ -128,9 +128,17 @@ public class CaffeNet extends BaseObject {
     /**
      * Get weights from local caffe.
      *
-     * @return
+     * @return the local weights
      */
     public native float[] getLocalWeights();
+
+    /**
+     * Get gradients from local caffe.
+     *
+     * @return the local gradients
+     */
+    public native float[] getLocalGradients();
+
     /**
      * retrieve the server address in which we will accept messages from peers in the cluster
      *
