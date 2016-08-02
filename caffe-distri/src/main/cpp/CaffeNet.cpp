@@ -193,6 +193,11 @@ SocketCaffeNet<Dtype>::SocketCaffeNet(const string& solver_conf_file, const stri
         if (i != this->node_rank_)
             sockt_channels_[i].reset(new SocketChannel());
     }
+
+    P2PSyncCPU<Dtype> * cpuParams = new P2PSyncCPU<Dtype>(this->root_solver_, NULL,
+        this->root_solver_->param());
+    this->syncs_.resize(1);
+    this->syncs_[0].reset(cpuParams);
 }
 
 template<typename Dtype>

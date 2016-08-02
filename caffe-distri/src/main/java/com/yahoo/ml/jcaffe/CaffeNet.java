@@ -126,6 +126,12 @@ public class CaffeNet extends BaseObject {
     public native boolean train(int solver_index, FloatBlob[] data, FloatArray labels);
 
     /**
+     * Get weights from local caffe.
+     *
+     * @return
+     */
+    public native float[] getLocalWeights();
+    /**
      * retrieve the server address in which we will accept messages from peers in the cluster
      *
      * @return the server address

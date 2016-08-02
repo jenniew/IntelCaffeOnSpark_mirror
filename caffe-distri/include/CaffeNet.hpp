@@ -17,7 +17,7 @@ void SetCaffeMode(int solver_mode);
 
 template<typename Dtype>
 class CaffeNet {
-  protected:
+  public:
     string solver_conf_file_, model_file_, state_file_;
     int num_local_devices_, num_total_devices_;
     int cluster_size_, node_rank_, start_device_id_;

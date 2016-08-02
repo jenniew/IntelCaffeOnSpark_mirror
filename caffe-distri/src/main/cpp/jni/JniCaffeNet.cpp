@@ -316,6 +316,25 @@ JNIEXPORT jboolean JNICALL Java_com_yahoo_ml_jcaffe_CaffeNet_train
 
 /*
  * Class:     com_yahoo_ml_jcaffe_CaffeNet
+ * Method:    getLocalWeights
+ * Signature: ()[F
+ */
+JNIEXPORT jfloatArray JNICALL Java_com_yahoo_ml_jcaffe_CaffeNet_getLocalWeights
+(JNIEnv *env, jobject object) {
+    CaffeNet<float>* native_ptr = (CaffeNet<float>*) GetNativeAddress(env, object);
+    float * weights = native_ptr->syncs_[0]->data();
+    int size = native_ptr->syncs_[0]->size();
+    jfloatArray result;
+    result = env->NewFloatArray(size);
+    if (result == NULL) {
+        throw "cannot new float array";
+    }
+    env->SetFloatArrayRegion(result, 0, size, weights);
+    return result;
+}
+
+/*
+ * Class:     com_yahoo_ml_jcaffe_CaffeNet
  * Method:    getInitIter
  * Signature: (I)I
  */

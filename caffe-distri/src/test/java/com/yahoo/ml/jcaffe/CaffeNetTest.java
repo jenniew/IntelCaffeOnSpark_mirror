@@ -40,10 +40,10 @@ public class CaffeNetTest {
                 "",
                 "",
                 1, //num_local_devices,
-                1, //cluster_size,
+                2, //cluster_size,
                 0, //node_rank,
                 true, //isTraining,
-                0, //NONE
+                CaffeNet.SOCKET, //SOCKET
                 -1);
         assertTrue(net != null);
 
@@ -159,6 +159,9 @@ public class CaffeNetTest {
         LayerParameter train_layer_param = net_param.getLayer(0);
         TransformationParameter param = train_layer_param.getTransformParam();
         FloatDataTransformer xform = new FloatDataTransformer(param, true);
+
+        // Get weights from local caffe
+        float[] weights = net.getLocalWeights();
 
         //simplified training
         System.out.print("CaffeNetTest training:");
