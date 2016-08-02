@@ -140,6 +140,14 @@ public class CaffeNet extends BaseObject {
     public native float[] getLocalGradients();
 
     /**
+     * Set local caffe's weights.
+     *
+     * @param weights new one
+     * @return true if succeed
+     */
+    public native boolean setLocalWeights(float[] weights);
+    
+    /**
      * retrieve the server address in which we will accept messages from peers in the cluster
      *
      * @return the server address

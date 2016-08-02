@@ -192,9 +192,31 @@ public class CaffeNetTest {
             }
         }
 
+        // JNI setLocalWeights test
+        float[] newWeights = randomFloatArray(weights.length);
+        assertTrue(net.setLocalWeights(newWeights));
+        weights = net.getLocalWeights(); // re-fetch local weights
+        assertEquals(weights, newWeights);
+
         //release C++ resource
         xform.deallocate();
         data_blob.deallocate();
         matVec.deallocate();
     }
+
+    /**
+     * Generate random array filled with float number from (0, 1) with length len.
+     * 
+     * @param len array length
+     * @return
+     */
+    public static float[] randomFloatArray(int len) {
+        assert (len > 0);
+        float[] result = new float[len];
+        for (int i = 0;i < len; i++) {
+            result[i] = (float) Math.random();
+        }
+        return result;
+    }
+
 }

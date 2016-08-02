@@ -353,6 +353,38 @@ JNIEXPORT jfloatArray JNICALL Java_com_yahoo_ml_jcaffe_CaffeNet_getLocalGradient
     env->SetFloatArrayRegion(result, 0, len, gradients);
     return result;
 }
+
+/*
+ * Class:     com_yahoo_ml_jcaffe_CaffeNet
+ * Method:    setLocalWeights
+ * Signature: ([F)Z
+ */
+JNIEXPORT jboolean JNICALL Java_com_yahoo_ml_jcaffe_CaffeNet_setLocalWeights
+(JNIEnv *env, jobject object, jfloatArray array) {
+    /* create a native CaffeNet object */
+    CaffeNet<float>* native_ptr = (CaffeNet<float>*) GetNativeAddress(env, object);
+
+    // get the body of array; it will be referenced by C pointer
+    float* data = env->GetFloatArrayElements(array, 0);
+    if (data == NULL) {
+        LOG(ERROR) << "GetFloatArrayElements() == NULL";
+        return 0;
+    }
+    size_t len = native_ptr->syncs_[0]->size();
+    // The java array length should equal to local caffe::data array length
+    assert(len == env->GetArrayLength(array));
+
+    // reset the cpu weights parameters
+    memcpy(native_ptr->syncs_[0]->data(), data, len * sizeof(float));
+
+    // we can use values that where modified inside C (in case we use 0, JNI_COMMIT)
+    // we won't see changes in case we have used JNI_ABORT
+    // (ref: http://jnicookbook.owsiak.org/recipe-%E2%84%96-013/)
+    env->ReleaseFloatArrayElements(array, data, JNI_ABORT);
+
+    return true;
+}
+
 /*
  * Class:     com_yahoo_ml_jcaffe_CaffeNet
  * Method:    getInitIter
