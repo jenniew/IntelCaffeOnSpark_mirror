@@ -127,12 +127,12 @@ public class CaffeNetTest {
             byte[] data = out.toByteArray();
 
             Mat mat = new Mat(data);
-	    mat.decode(Mat.CV_LOAD_IMAGE_COLOR);
+            mat.decode(Mat.CV_LOAD_IMAGE_COLOR);
             mat.resize(height, width);
 
             Mat oldmat=matVec.put(idx, mat);
-	    if(oldmat != null)
-		oldmat.deallocate();
+            if(oldmat != null)
+                oldmat.deallocate();
 
             out.close();
         }
@@ -165,8 +165,8 @@ public class CaffeNetTest {
         for (int i=0; i<batchs; i++) {
             System.out.print(".");
             nextBatch(matVec, labelblob);
-	    xform.transform(matVec, data_blob);
-	    assertTrue(net.train(0, dataBlobs, labelblob.cpu_data()));
+            xform.transform(matVec, data_blob);
+            assertTrue(net.train(0, dataBlobs, labelblob.cpu_data()));
         }
 
         //simplified test
@@ -174,19 +174,19 @@ public class CaffeNetTest {
         System.out.print("CaffeNetTest test:");
         for (int i=0; i<batchs; i++) {
             System.out.print(".");
-	    nextBatch(matVec, labelblob);
+            nextBatch(matVec, labelblob);
             xform.transform(matVec, data_blob);
             FloatBlob[] top_blobs_vec = net.predict(0, dataBlobs, labelblob.cpu_data(), test_features);
             //validate test results
             for (int j = 0; j< top_blobs_vec.length; j++) {
-	      FloatArray result_vec = top_blobs_vec[j].cpu_data();
-	      assertTrue(result_vec.get(0) < 50.0);
+                FloatArray result_vec = top_blobs_vec[j].cpu_data();
+                assertTrue(result_vec.get(0) < 50.0);
             }
         }
 
         //release C++ resource
         xform.deallocate();
         data_blob.deallocate();
-	matVec.deallocate();
+        matVec.deallocate();
     }
 }
