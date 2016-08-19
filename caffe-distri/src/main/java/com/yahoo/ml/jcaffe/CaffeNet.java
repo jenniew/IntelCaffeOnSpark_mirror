@@ -6,6 +6,10 @@ package com.yahoo.ml.jcaffe;
 import java.io.IOException;
 
 import caffe.Caffe.*;
+import org.parameterserver.client.PSClient;
+import org.parameterserver.protocol.DataType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * CaffeNet is the primary class for JVM layer to interact with Caffe (C++).
@@ -18,10 +22,18 @@ import caffe.Caffe.*;
  *     with file names defined as CaffeNet.snapshotFilename().
  */
 public class CaffeNet extends BaseObject {
+    private static final Logger LOG = LoggerFactory.getLogger(CaffeNet.class);
+
     public static final int NONE = 0;
     public static final int RDMA = 1;
     public static final int SOCKET = 2;
     private final SolverParameter solverParameter_;
+
+    private final int nodeRank; // Rank of node; Indexed from 0
+    // TODO: Add PSClient object release method
+    // TODO: These new added filed should implements Serializable interface
+    private final PSClient psClient; // Parameter Server Client
+    private final String weightVector; // global weight vector name on PS-master
 
     /**
      * constructor of CaffeNet.
@@ -39,6 +51,7 @@ public class CaffeNet extends BaseObject {
      * @param connection_type  connection type among the servers
      * @param start_device_id  the start ID of device. default: -1
      */
+    @Deprecated
     public CaffeNet(String solver_conf_file,
                     String input_model_file,
                     String input_state_file,
@@ -48,11 +61,52 @@ public class CaffeNet extends BaseObject {
                     boolean isTraining,
                     int connection_type,
                     int start_device_id) throws IOException {
+       this(solver_conf_file, input_model_file, input_state_file, num_local_devices,
+         cluster_size, node_rank, isTraining, connection_type, start_device_id, "", "");
+    }
+
+    public CaffeNet(String solver_conf_file,
+      String input_model_file,
+      String input_state_file,
+      int num_local_devices,
+      int cluster_size,
+      int node_rank,
+      boolean isTraining,
+      int connection_type,
+      int start_device_id,
+      String psMasterAddr,
+      String weightVector) throws IOException {
         solverParameter_ = Utils.GetSolverParam(solver_conf_file);
+        nodeRank = node_rank;
         if (!allocate(solver_conf_file, input_model_file, input_state_file,
-                num_local_devices, cluster_size, node_rank, isTraining,
-                connection_type, start_device_id))
+          num_local_devices, cluster_size, node_rank, isTraining,
+          connection_type, start_device_id))
             throw new RuntimeException("Failed to create CaffeNet object");
+
+        if (psMasterAddr != null && !psMasterAddr.isEmpty()) {
+            // TODO: Add psClient connection check
+            LOG.info("PS-Master Address: " + psMasterAddr + ", weightVector"
+              + ": " + weightVector + ", my rank: " + node_rank);
+            this.psClient = new PSClient(psMasterAddr);
+            this.weightVector = weightVector;
+
+            // Note that each ps context is local and all clients are the same
+            String psContext = "Caffe_On_Spark_PS_" + weightVector;
+            LOG.info("CaffeNet: set local ps client context, rank: " + node_rank);
+            psClient.setContext(psContext);
+
+            // create global weight vector on the PS with overwrite
+            if (nodeRank == 0) {
+                int numFeatures = this.getLocalGradients().length; // TODO: further check
+                LOG.info("CaffeNet: send create vector [" + weightVector + "] request to "
+                  + "PS, size: " + numFeatures);
+                psClient.createVector(weightVector, true, numFeatures, DataType.Float, true);
+            }
+        } else {
+            LOG.error("NO PS Master socket Address is set.");
+            this.psClient = null;
+            this.weightVector = null;
+        }
     }
 
     private native boolean allocate(String solver_conf_file,
@@ -121,9 +175,67 @@ public class CaffeNet extends BaseObject {
      * @param solver_index index of our solver
      * @param data   array of input data to be attached to input blobs
      * @param labels   array of input labels to be attached to input blobs
-     * @return true iff successed
+     * @return true iff succeed
      */
+    @Deprecated
     public native boolean train(int solver_index, FloatBlob[] data, FloatArray labels);
+
+    public boolean trainWithPS(int solver_index, FloatBlob[] data, FloatArray labels) {
+        try {
+            LOG.info("trainWithPS: read weights from PS and set to local weight, rank: " + nodeRank);
+            float[] weights = ((org.parameterserver.protocol.FloatArray)psClient.getVector
+              (weightVector).getValues()).getValues();
+            this.setLocalWeights(weights);
+        } catch (IOException ioe) {
+            LOG.error("PS vector client read IOException...", ioe);
+        }
+
+        LOG.info("trainWithPS: do one-step training with local caffe, rank: " + nodeRank);
+        boolean succ = train(solver_index, data, labels);
+
+        try {
+            LOG.info("trainWithPS: getLocalGradients, rank: " + nodeRank);
+            float[] gradients = this.getLocalGradients();
+            psClient.add2Vector(weightVector, intArray(gradients.length), new org
+              .parameterserver.protocol.FloatArray(gradients));
+        } catch (IOException ioe) {
+            LOG.error("PS vector client write IOException...", ioe);
+        }
+
+        // set local caffe weights with values fetch from ps
+        LOG.info("trainWithPS: send PS-BSP sync request, rank: " + nodeRank);
+        try {
+            LOG.info("trainWithPS: send PS-BSP sync request, rank: " + nodeRank);
+            psClient.bspSync();
+        } catch (IOException ioe) {
+            LOG.error("PS BSP sync exception..." + ioe);
+        }
+
+        return succ;
+    }
+
+    /**
+     * Close ps client connection
+     */
+    public void closePS() {
+        LOG.info("CaffeNet: send close ps client request");
+        psClient.close();
+    }
+
+    // TODO: Add this method to TestUtils class
+
+  /**
+   * Create an int array filled with
+   * @param size
+   * @return
+   */
+    public static int[] intArray(int size) {
+        int[] data = new int[size];
+        for (int i = 0; i < size; i++) {
+            data[i] = i;
+        }
+        return data;
+    }
 
     /**
      * Get weights from local caffe.
@@ -143,10 +255,10 @@ public class CaffeNet extends BaseObject {
      * Set local caffe's weights.
      *
      * @param weights new one
-     * @return true if succeed
+     * @return true iff succeed
      */
     public native boolean setLocalWeights(float[] weights);
-    
+
     /**
      * retrieve the server address in which we will accept messages from peers in the cluster
      *
@@ -155,7 +267,7 @@ public class CaffeNet extends BaseObject {
     public native String[] localAddresses();
 
     /**
-     * retreve the device assigned to a given solver
+     * retrieve the device assigned to a given solver
      *
      * @param solver_index the index of a solver
      * @return device ID assiged to that solver

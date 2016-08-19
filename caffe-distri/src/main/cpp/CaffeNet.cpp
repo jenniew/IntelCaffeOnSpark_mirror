@@ -180,19 +180,19 @@ SocketCaffeNet<Dtype>::SocketCaffeNet(const string& solver_conf_file, const stri
     : CaffeNet<Dtype>(solver_conf_file, model_file, state_file, num_local_devices,
                       cluster_size, node_rank,isTraining, start_device_id) {
 
-    sockt_channels_.resize(this->cluster_size_);
-
-    sockt_adapter_.reset(new SocketAdapter(&sockt_channels_));
-    LOG(INFO)<< "Socket adapter: " << sockt_adapter_->address();
-
-    // The node creates a Socket Channel for each node in the cluster except
-    // itself.
-    // The Socket Channels are ordered according to the rank of the peers.
-    // Create channel for each peer
-    for (int i = 0; i < this->cluster_size_; i++) {
-        if (i != this->node_rank_)
-            sockt_channels_[i].reset(new SocketChannel());
-    }
+//    sockt_channels_.resize(this->cluster_size_);
+//
+//    sockt_adapter_.reset(new SocketAdapter(&sockt_channels_));
+//    LOG(INFO)<< "Socket adapter: " << sockt_adapter_->address();
+//
+//    // The node creates a Socket Channel for each node in the cluster except
+//    // itself.
+//    // The Socket Channels are ordered according to the rank of the peers.
+//    // Create channel for each peer
+//    for (int i = 0; i < this->cluster_size_; i++) {
+//        if (i != this->node_rank_)
+//            sockt_channels_[i].reset(new SocketChannel());
+//    }
 
     P2PSyncCPU<Dtype> * cpuParams = new P2PSyncCPU<Dtype>(this->root_solver_, NULL,
         this->root_solver_->param());
@@ -225,10 +225,10 @@ RDMACaffeNet<Dtype>::~RDMACaffeNet() {
 
 template<typename Dtype>
 SocketCaffeNet<Dtype>::~SocketCaffeNet() {
-    for (int i=0; i<CaffeNet<Dtype>::cluster_size_; i++)
-        sockt_channels_[i].reset();
-
-    sockt_adapter_.reset();
+//    for (int i=0; i<CaffeNet<Dtype>::cluster_size_; i++)
+//        sockt_channels_[i].reset();
+//
+//    sockt_adapter_.reset();
 }
 
 template<typename Dtype>

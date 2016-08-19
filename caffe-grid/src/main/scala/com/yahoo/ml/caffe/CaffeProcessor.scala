@@ -21,6 +21,7 @@ private[caffe] object CaffeProcessor {
 
   def instance[T1, T2](source: DataSource[T1, T2], rank: Int): CaffeProcessor[T1, T2] = synchronized {
     try {
+      log.info("new CaffeProcessor on node rank: " + rank)
       myInstance = new CaffeProcessor[T1, T2](source, rank)
       myInstance.asInstanceOf[CaffeProcessor[T1, T2]]
     } catch {
@@ -68,6 +69,8 @@ private[caffe] class CaffeProcessor[T1, T2](val source: DataSource[T1, T2],
     if (source.isTrain) ""
     else FSUtils.GetLocalFileName(conf.modelPath, "model.tmp")
   }
+  val psMasterAddr : String = conf.psMasterAddr
+  val psWeightVector : String = conf.psWeightVector
 
   //create a list of caffeTops
   val caffeNetList: Seq[CaffeNet] = {
@@ -75,8 +78,10 @@ private[caffe] class CaffeProcessor[T1, T2](val source: DataSource[T1, T2],
       // resume training if available
       val localStateFile: String = FSUtils.GetLocalFileName(conf.snapshotStateFile, "state.tmp")
       val localModelFile: String = FSUtils.GetLocalFileName(conf.snapshotModelFile, "model.tmp")
+      log.info("new CaffeNet with ps, rank: " + rank)
       Seq(new CaffeNet(conf.protoFile, localModelFile, localStateFile, numLocalGPUs,
-          conf.clusterSize, rank, true, conf.connection, -1))
+          conf.clusterSize, rank, true, conf.connection, -1, conf.psMasterAddr,
+          conf.psWeightVector))
     } else {
       // feature or test mode, we have numLocalGPUs caffeTops, each of them has one gpu.
       // this is to avoid create master/slave gpus where slave gpu does not do test.
@@ -105,19 +110,11 @@ private[caffe] class CaffeProcessor[T1, T2](val source: DataSource[T1, T2],
 
   //start the processor
   def start(rank2addresses: Array[(Int, Array[String])]) : Unit = {
-    if (source.isTrain) {
-      val peer_addr = new Array[String](rank2addresses.length)
-      for ((peer_rank, addrs) <- rank2addresses) {
-          if (peer_rank != rank)
-            peer_addr(peer_rank) = addrs(rank)
-      }
-      caffeNetList(0).connect(peer_addr)
-    }
-
     //clear the source queue
     source.sourceQueue.clear()
 
     //start worker threads
+    log.info("startThreads, rank: " + rank)
     startThreads()
   }
 
@@ -135,9 +132,11 @@ private[caffe] class CaffeProcessor[T1, T2](val source: DataSource[T1, T2],
 
       if (source.isTrain) {
         //start solvers w/ only rank 0 will save model
-        solvers.add(Future {
+        log.info("CaffeProcessor::startThread::doTrain, rank: " + rank)
+        solvers.add(Future { // TODO: Verify that when will `dotrain` method beed called
           doTrain(caffeNetList(0), g, queuePair)
         })
+        log.info("start transformers")
         //start transformers
         for (t <- 0 until conf.transform_thread_per_device)
           transformers.add(Future {
@@ -167,6 +166,7 @@ private[caffe] class CaffeProcessor[T1, T2](val source: DataSource[T1, T2],
 
   //feed data to train queue
   def feedQueue(item: T1): Boolean = {
+    log.info("CaffeProcessor::feedQueue, rank: " + rank)
     var offer_status = false
     while (!solvers.get(0).isCompleted && !offer_status) {
       offer_status = source.sourceQueue.offer(item)
@@ -276,6 +276,7 @@ private[caffe] class CaffeProcessor[T1, T2](val source: DataSource[T1, T2],
             }
           }
           tpl._3.copyFrom(labels)
+          log.info("put into queuePair.Full")
           putIntoQueue(tpl, queuePair.Full, queueIdx)
         }
       }
@@ -309,11 +310,14 @@ private[caffe] class CaffeProcessor[T1, T2](val source: DataSource[T1, T2],
       val maxIter: Int = caffeNet.getMaxIter(syncIdx)
       caffeNet.init(syncIdx, true)
       for (it <- initIter until maxIter if (tpl != STOP_MARK)) {
-        tpl = queuePair.Full.take
+        log.info("Start Iteration: " + it + ", rank: " + rank)
+        tpl = queuePair.Full.take //TODO: Note that BlockingQueue.take may be blocked until not null
         if (tpl == STOP_MARK)  {
+          log.info("STOP_MARK: queuePair.Free.put(tpl), rank: " + rank)
           queuePair.Free.put(tpl)
         } else {
-          val rs : Boolean = caffeNet.train(syncIdx, tpl._2, toDataPtr(tpl._3))
+          log.info("CaffeProcessor::doTrain::TrainWithPS, rank: " + rank)
+          val rs : Boolean = caffeNet.trainWithPS(syncIdx, tpl._2, toDataPtr(tpl._3))
           if (!rs) {
             log.warn("Failed at training at iteration "+it)
           }

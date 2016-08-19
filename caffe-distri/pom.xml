@@ -49,6 +49,19 @@
                 </exclusion>
             </exclusions>
         </dependency>
+        <!-- Parameter Server Client dependency-->
+        <dependency>
+            <groupId>org.parameterserver</groupId>
+            <artifactId>psclient</artifactId>
+            <version>0.1.0-SNAPSHOT</version>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>4.12</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
     <build>
         <pluginManagement>
@@ -143,11 +156,8 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>2.12.4</version>
                 <configuration>
-                    <includes>
-                        <include>${project.basedir}/src/main/java/caffe/Caffe.java</include>
-                    </includes>
                     <argLine>
-                        -Djava.library.path=".build_debug/lib:.build_release/lib:${project.basedir}/../caffe-public/distribute/lib:/home/y/lib64:/home/y/lib64/mkl/intel64:/usr/lib64:/lib64"
+                         -Djava.library.path=".build_debug/lib:.build_release/lib:${java.library.path}"
                     </argLine>
                 </configuration>
             </plugin>
