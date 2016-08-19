@@ -124,7 +124,7 @@ object DataSource extends Serializable {
       return null
     }
 
-    //locate a constructore of source class
+    //locate a constructor of source class
     val constructor = clz.getConstructor(conf.getClass, java.lang.Integer.TYPE, java.lang.Boolean.TYPE)
     if (constructor == null) {
       log.error(class_name + " doesn't have constructor of required signature (conf: Config, layerId: Int, isTrain: Boolean)")

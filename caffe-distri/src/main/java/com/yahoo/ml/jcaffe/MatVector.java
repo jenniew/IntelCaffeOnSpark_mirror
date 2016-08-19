@@ -17,18 +17,18 @@ public class MatVector extends BaseObject {
     public MatVector(int size) {
         if (!allocate(size))
             throw new RuntimeException("Failed to create MatVector object");
-	matList = new Mat[size];
+        matList = new Mat[size];
     }
 
     private native boolean allocate(int size);
 
     @Override
     protected void deallocate(long address){
-	//Free up the references to all Mat objects in the matList
-	for(int i=0; i<matList.length;i++){
+        //Free up the references to all Mat objects in the matList
+        for(int i=0; i<matList.length;i++){
             matList[i] = null;
-	}
-	deallocateVec(address);
+        }
+        deallocateVec(address);
     }
 
     protected native void deallocateVec(long address);
@@ -39,14 +39,13 @@ public class MatVector extends BaseObject {
      * @param mat a Mat object
      */
     public Mat put(int pos, Mat mat){
-	this.putnative(pos,mat);
+        this.putnative(pos,mat);
 
-	Mat oldmat = null;
-	if (matList[pos] != null)
-	    oldmat = matList[pos];
-
-	matList[pos]=mat;
-	return oldmat;
+        Mat oldmat = null;
+        if (matList[pos] != null)
+            oldmat = matList[pos];
+        matList[pos]=mat;
+        return oldmat;
     }
 
     private native void putnative(int pos, Mat mat);
