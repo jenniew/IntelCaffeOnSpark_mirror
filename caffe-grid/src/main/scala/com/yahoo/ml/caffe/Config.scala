@@ -36,6 +36,8 @@ class Config(sc: SparkContext) extends Serializable {
   private var _outputFormat = "json"
   private var _imageRoot = ""
   private var _labelFile = ""
+  private var _psMasterAddr = ""
+  private var _psWeightVector = ""
   private var _lmdb_partitions = 0
   @transient private var _solverParameter: SolverParameter = null
   @transient private var _netParam: NetParameter = null
@@ -306,6 +308,26 @@ class Config(sc: SparkContext) extends Serializable {
   def labelFile_=(value: String) = _labelFile = value
 
   /**
+    * Get the input ps master socket address
+    */
+  def psMasterAddr = _psMasterAddr
+
+  /**
+    * Set the input ps master socket address
+    */
+  def psMasterAddr_=(value: String) = _psMasterAddr = value
+
+  /**
+    * Get the input ps global weight vector name
+    */
+  def psWeightVector = _psWeightVector
+
+  /**
+    * Set the input ps global weight vector name
+    */
+  def psWeightVector_=(value: String) = _psWeightVector = value
+
+  /**
    * Get number of LMDB partitions
    */
   def lmdb_partitions = _lmdb_partitions
@@ -360,6 +382,8 @@ class Config(sc: SparkContext) extends Serializable {
       //used for dev purpose only
       options.addOption("imageRoot", "imageRoot", true, "image files' root")
       options.addOption("labelFile", "labelFile", true, "label file")
+      options.addOption("psMasterAddr", "psMasterAddr", true, "ps master socket address")
+      options.addOption("psWeightVector", "psWeightVector", true, "ps global weight vector name")
       new BasicParser().parse(options, args)
     }
 
@@ -416,6 +440,8 @@ class Config(sc: SparkContext) extends Serializable {
 
     imageRoot = if (cmd.hasOption("imageRoot")) cmd.getOptionValue("imageRoot") else null
     labelFile = if (cmd.hasOption("labelFile")) cmd.getOptionValue("labelFile") else null
+    psMasterAddr = if (cmd.hasOption("psMasterAddr")) cmd.getOptionValue("psMasterAddr") else null
+    psWeightVector = if (cmd.hasOption("psWeightVector")) cmd.getOptionValue("psWeightVector") else null
   }
 
   override def toString(): String = {
