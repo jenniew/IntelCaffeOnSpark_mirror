@@ -21,9 +21,15 @@
     <slf4j.version>1.6.6</slf4j.version>
     <spark.version>1.6.0</spark.version>
     <lmdbjni.version>0.4.6</lmdbjni.version>
+    <lmdbjni.version>0.4.6</lmdbjni.version>
   </properties>
 
   <dependencies>
+    <dependency>
+      <groupId>org.parameterserver</groupId>
+      <artifactId>parameter-server</artifactId>
+      <version>0.1.0-SNAPSHOT</version>
+    </dependency>
     <dependency>
       <groupId>com.yahoo.ml</groupId>
       <artifactId>caffe-distri</artifactId>
