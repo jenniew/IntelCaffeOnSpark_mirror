@@ -4,6 +4,7 @@
 package com.yahoo.ml.jcaffe;
 
 import java.io.IOException;
+import java.util.concurrent.atomic.AtomicLong;
 
 import caffe.Caffe.*;
 import org.parameterserver.client.PSClient;
@@ -34,6 +35,7 @@ public class CaffeNet extends BaseObject {
     // TODO: These new added filed should implements Serializable interface
     private final PSClient psClient; // Parameter Server Client
     private final String weightVector; // global weight vector name on PS-master
+    private AtomicLong iterationCount = new AtomicLong(0);
 
     /**
      * constructor of CaffeNet.
@@ -180,22 +182,33 @@ public class CaffeNet extends BaseObject {
     @Deprecated
     public native boolean train(int solver_index, FloatBlob[] data, FloatArray labels);
 
+    // TODO: need to print iteration here
+    // TODO: we need to broadcast the init weight at the 0 iteration.
     public boolean trainWithPS(int solver_index, FloatBlob[] data, FloatArray labels) {
-        try {
-            LOG.info("trainWithPS: read weights from PS and set to local weight, rank: " + nodeRank);
-            float[] weights = ((org.parameterserver.protocol.FloatArray)psClient.getVector
-              (weightVector).getValues()).getValues();
-            this.setLocalWeights(weights);
-        } catch (IOException ioe) {
-            LOG.error("PS vector client read IOException...", ioe);
-        }
-
+        iterationCount.incrementAndGet();
+//        try {
+//            LOG.info("trainWithPS: read weights from PS and set to local weight, rank: " + nodeRank);
+//            long getWeightTimeStart = System.currentTimeMillis();
+//            float[] weights = ((org.parameterserver.protocol.FloatArray)psClient.getVector(
+//                    weightVector).getValues()).getValues();
+//            long getWeightTimeEnd = System.currentTimeMillis();
+//            LOG.info("time to get weight vector: " + (getWeightTimeEnd - getWeightTimeStart) + " .ms" );
+//
+//            long setWeightTimeStart = System.currentTimeMillis();
+//            this.setLocalWeights(weights);
+//            long setWeightTimeEnd = System.currentTimeMillis();
+//            LOG.info("time to set weight vector: " + (setWeightTimeEnd - setWeightTimeStart) + " .ms" );
+//        } catch (IOException ioe) {
+//            LOG.error("PS vector client read IOException...", ioe);
+//        }
         LOG.info("trainWithPS: do one-step training with local caffe, rank: " + nodeRank);
+        // TODO: need to separate this to be 1)forward+backward  2) applyupdate.
         boolean succ = train(solver_index, data, labels);
 
         try {
             LOG.info("trainWithPS: getLocalGradients, rank: " + nodeRank);
             float[] gradients = this.getLocalGradients();
+            // TODO: vectorAxpby   1/clustersize*gradient,  or scale the gradient locally.
             psClient.add2Vector(weightVector, intArray(gradients.length), new org
               .parameterserver.protocol.FloatArray(gradients));
         } catch (IOException ioe) {
@@ -203,14 +216,14 @@ public class CaffeNet extends BaseObject {
         }
 
         // set local caffe weights with values fetch from ps
-        LOG.info("trainWithPS: send PS-BSP sync request, rank: " + nodeRank);
+        LOG.info("trainWithPS: send PS-BSP sync request, rank: " + nodeRank + " iteration: " + this.iterationCount.get());
         try {
             LOG.info("trainWithPS: send PS-BSP sync request, rank: " + nodeRank);
             psClient.bspSync();
         } catch (IOException ioe) {
             LOG.error("PS BSP sync exception..." + ioe);
         }
-
+        // TODO: add update here.
         return succ;
     }
 

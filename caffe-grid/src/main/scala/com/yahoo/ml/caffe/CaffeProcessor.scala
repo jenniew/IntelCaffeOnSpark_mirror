@@ -3,27 +3,31 @@
 // Please see LICENSE file in the project root for terms.
 package com.yahoo.ml.caffe
 
-import java.util.concurrent.{ArrayBlockingQueue, ForkJoinPool, ConcurrentHashMap}
+import java.util
+import java.util.concurrent.{ArrayBlockingQueue, ConcurrentHashMap, ForkJoinPool}
 import java.util.ArrayList
 
 import caffe.Caffe._
 import com.yahoo.ml.jcaffe._
-import org.slf4j.{LoggerFactory, Logger}
+import org.slf4j.{Logger, LoggerFactory}
 
 import scala.concurrent.duration.Duration
-import scala.concurrent.{Await, Future, ExecutionContext}
+import scala.concurrent.{Await, ExecutionContext, Future}
 import org.apache.spark.sql.Row
 
-private[caffe] object CaffeProcessor {
+object CaffeProcessor {
   val log: Logger = LoggerFactory.getLogger(this.getClass)
 
-  var myInstance: CaffeProcessor[_, _] = null
+  val rankToInstance = new util.HashMap[Int, CaffeProcessor[_, _]]
 
   def instance[T1, T2](source: DataSource[T1, T2], rank: Int): CaffeProcessor[T1, T2] = synchronized {
     try {
       log.info("new CaffeProcessor on node rank: " + rank)
-      myInstance = new CaffeProcessor[T1, T2](source, rank)
-      myInstance.asInstanceOf[CaffeProcessor[T1, T2]]
+      if (!rankToInstance.containsKey(rank)) {
+        val myInstance = new CaffeProcessor[T1, T2](source, rank)
+        rankToInstance.put(rank, myInstance)
+      }
+      rankToInstance.get(rank).asInstanceOf[CaffeProcessor[T1, T2]]
     } catch {
       case t: Throwable => {
         log.error("Cannot init CaffeProcessor: ", t)
@@ -32,8 +36,8 @@ private[caffe] object CaffeProcessor {
     }
   }
   // Assuming it would be always created at this point.
-  def instance[T1, T2](): CaffeProcessor[T1, T2] = {
-    myInstance.asInstanceOf[CaffeProcessor[T1, T2]]
+  def instance[T1, T2](rank: Int): CaffeProcessor[T1, T2] = {
+    rankToInstance.get(rank).asInstanceOf[CaffeProcessor[T1, T2]]
   }
 }
 
@@ -42,7 +46,7 @@ private[caffe] class QueuePair[T]  {
   val Full: ArrayBlockingQueue[T] = new ArrayBlockingQueue[T] (2)
 }
 
-private[caffe] class CaffeProcessor[T1, T2](val source: DataSource[T1, T2],
+class CaffeProcessor[T1, T2](val source: DataSource[T1, T2],
                                              val rank: Int) {
   val log: Logger = LoggerFactory.getLogger(this.getClass)
   log.info("my rank is " + rank)
@@ -111,7 +115,7 @@ private[caffe] class CaffeProcessor[T1, T2](val source: DataSource[T1, T2],
   //start the processor
   def start(rank2addresses: Array[(Int, Array[String])]) : Unit = {
     //clear the source queue
-    source.sourceQueue.clear()
+    source.clear()
 
     //start worker threads
     log.info("startThreads, rank: " + rank)
@@ -167,10 +171,7 @@ private[caffe] class CaffeProcessor[T1, T2](val source: DataSource[T1, T2],
   //feed data to train queue
   def feedQueue(item: T1): Boolean = {
     log.info("CaffeProcessor::feedQueue, rank: " + rank)
-    var offer_status = false
-    while (!solvers.get(0).isCompleted && !offer_status) {
-      offer_status = source.sourceQueue.offer(item)
-    }
+    source.offer(item)
     !solvers.get(0).isCompleted
   }
 
@@ -244,12 +245,15 @@ private[caffe] class CaffeProcessor[T1, T2](val source: DataSource[T1, T2],
       val labels = new FloatBlob()
       labels.reshape(batchSize, 1, 1, 1)
       val sampleIds = new Array[String](batchSize)
+      var isInitialized = false;
 
       //initialize free queue now that device is set
       initialFreeQueue(queuePair)
 
-      while (!solvers.get(solverIdx).isCompleted && source.nextBatch(sampleIds, dataHolder, labels)) {
+      while (!solvers.get(solverIdx).isCompleted) {
         if (transformer != null) {
+          source.nextBatch(sampleIds, dataHolder, labels)
+
           dataHolder match {
             case matVector: MatVector => {
               transformer.transform(matVector, data(0))

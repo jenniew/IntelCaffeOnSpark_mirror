@@ -8,6 +8,7 @@ import java.net.URI
 
 import caffe.Caffe._
 import com.yahoo.ml.jcaffe._
+import scala.collection.JavaConversions._
 
 import org.apache.hadoop.io.BytesWritable
 import org.apache.spark.SparkContext
@@ -86,74 +87,91 @@ abstract class ImageDataSource(conf: Config, layerId: Int, isTrain: Boolean)
     new MatVector(batchSize_)
   }
 
+  private def sampleToMat(sample: (String, String, Int, Int, Int, Boolean , Array[Byte])): Mat = {
+    var mat: Mat = null
+    val sample_id = sample._1
+    val sample_channels = sample._3
+    val sample_height = sample._4
+    val sample_width = sample._5
+    val sample_encoded = sample._6
+    val sample_data = sample._7
+
+
+    if (sample_height > 0 && sample_width > 0) {
+      mat = new Mat(sample_channels, sample_height, sample_width, sample_data)
+      if (sample_encoded)
+        mat.decode(Mat.CV_LOAD_IMAGE_UNCHANGED)
+      if (mat.width() != sample_width || mat.height() != sample_width) {
+        log.warn("Skip image " + sample_id)
+        mat = null
+      }
+      else if (conf.resize && ((sample_height != height) || (sample_width != width))) {
+        log.info("Resize from " + sample_height + "x" + sample_width + " to " + height + "x" + width)
+        mat.resize(height, width)
+      }
+    } else {
+      mat = new Mat(sample_data)
+      if (sample_encoded) {
+        numChannels match {
+          case 1 => mat.decode(Mat.CV_LOAD_IMAGE_GRAYSCALE)
+          case 3 => mat.decode(Mat.CV_LOAD_IMAGE_COLOR)
+          case _ => mat.decode(Mat.CV_LOAD_IMAGE_UNCHANGED)
+        }
+      }
+      if (mat.width() == 0) {
+        log.warn("Skipped image " + sample_id)
+        mat = null
+      }
+      else if (conf.resize)
+        mat.resize(height, width)
+    }
+    mat
+  }
+
+  private def samplesToMats(samples: Iterator[(String, String, Int, Int, Int, Boolean , Array[Byte])],
+                            mats: MatVector, labels: FloatBlob): Unit = {
+    var count = 0
+    var oldmat: Mat = null
+    val labelCPU = labels.cpu_data()
+
+    while(samples.hasNext) {
+      val sample = samples.next()
+      val mat = sampleToMat(sample)
+      val sample_label = sample._2
+      labelCPU.set(count, sample_label.toInt)
+      if (mat != null) {
+        oldmat = mats.put(count, mat)
+        if (oldmat != null)
+          oldmat.deallocate()
+        count = count + 1
+      } else {
+        throw new RuntimeException("cannot convert a sample to mat")
+      }
+    }
+  }
+
+  private def batchSampleFromQueue(): Iterator[(String, String, Int, Int, Int, Boolean , Array[Byte])] = {
+    if (sourceQueue.size() < batchSize() && historyBatch.size() == batchSize()) {
+      log.info("repeated batch")
+      historyBatch.iterator()
+    } else {
+      val result = new Array[(String, String, Int, Int, Int, Boolean , Array[Byte])](batchSize())
+      var count: Int = 0
+      while (count < batchSize_) {
+        result.update(count, sourceQueue.take())
+        count += 1
+      }
+      result.iterator
+    }
+  }
   /* create a batch of samples extracted from source queue, up to a batch size.
    *
    * return false if seeing STOP_MARK from source queue
    * */
   def nextBatch(sampleIds: Array[String], mats: MatVector, labels: FloatBlob): Boolean = {
-    var labelCPU = labels.cpu_data()
-
-    var shouldContinue = true
-    var mat: Mat = null
-    var oldmat: Mat = null
-    var count: Int = 0
-    while (count < batchSize_ && shouldContinue) {
-      val sample = sourceQueue.take()
-
-      if (sample == STOP_MARK) {
-        log.info("Completed all files")
-        shouldContinue = false
-      } else {
-        val sample_id = sample._1
-        val sample_label = sample._2
-        val sample_channels = sample._3
-        val sample_height = sample._4
-        val sample_width = sample._5
-        val sample_encoded = sample._6
-        val sample_data = sample._7
-
-        sampleIds(count) = sample_id
-        labelCPU.set(count, sample_label.toInt)
-        if (sample_height > 0 && sample_width > 0) {
-          mat = new Mat(sample_channels, sample_height, sample_width, sample_data)
-          if (sample_encoded)
-            mat.decode(Mat.CV_LOAD_IMAGE_UNCHANGED)
-          if (mat.width() != sample_width || mat.height() != sample_width) {
-            log.warn("Skip image " + sample_id)
-            mat = null
-          }
-          else if (conf.resize && ((sample_height != height) || (sample_width != width))) {
-            log.info("Resize from " + sample_height + "x" + sample_width + " to " + height + "x" + width)
-            mat.resize(height, width)
-          }
-        } else {
-          mat = new Mat(sample_data)
-          if (sample_encoded) {
-            numChannels match {
-              case 1 => mat.decode(Mat.CV_LOAD_IMAGE_GRAYSCALE)
-              case 3 => mat.decode(Mat.CV_LOAD_IMAGE_COLOR)
-              case _ => mat.decode(Mat.CV_LOAD_IMAGE_UNCHANGED)
-            }
-          }
-          if (mat.width() == 0) {
-            log.warn("Skipped image " + sample_id)
-            mat = null
-          }
-          else if (conf.resize)
-            mat.resize(height, width)
-        }
-
-        if (mat != null) {
-          oldmat = mats.put(count, mat)
-          if (oldmat != null)
-            oldmat.deallocate()
-          count = count + 1
-        }
-      }
-    }
-
-    shouldContinue
+    val batchSample = batchSampleFromQueue()
+    samplesToMats(batchSample, mats, labels)
+    true
   }
-
 }
 

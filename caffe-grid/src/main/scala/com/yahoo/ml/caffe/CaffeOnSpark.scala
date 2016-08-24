@@ -153,7 +153,7 @@ class CaffeOnSpark(@transient val sc: SparkContext) extends Serializable {
     //Phase 3: set up the processors
     sc.parallelize(0 until conf.clusterSize, conf.clusterSize).map {
       case rank: Int => {
-        val processor = CaffeProcessor.instance[T1, T2]()
+        val processor = CaffeProcessor.instance[T1, T2](rank)
         //start processor w/ the given addresses
         processor.start(bcast_addresses.value)
       }
@@ -191,24 +191,25 @@ class CaffeOnSpark(@transient val sc: SparkContext) extends Serializable {
       log.info("Partition size: min=" + minPartSize + " max=" + sizeRDD.max())
     }
 
-    sc.parallelize(0 until conf.clusterSize, conf.clusterSize).map { _ =>
-          val processor = CaffeProcessor.instance[T1, T2]()
+    sc.parallelize(0 until conf.clusterSize, conf.clusterSize).map { rank =>
+          val processor = CaffeProcessor.instance[T1, T2](rank)
           processor.sync()
     }.collect()
 
     //Phase 6: feed the processor
     var continue: Boolean = true
+    val clusterSize = conf.clusterSize
     while (continue) {
       //conduct training with dataRDD
-      continue = trainDataRDD.mapPartitions {
-        iter => {
+      continue = trainDataRDD.mapPartitionsWithIndex {
+        (rank, iter) => {
           if (iter.isEmpty) {
             log.info("encounter zero partitions")
             Iterator(true)
           } else {
             var res = false
             //feed training data from iterator
-            val processor = CaffeProcessor.instance[T1, T2]()
+            val processor = CaffeProcessor.instance[T1, T2](rank % clusterSize)
             if (!processor.solversFinished) {
               if (minPartSize > 0) {
                 res = iter.take(minPartSize).map { sample => processor.feedQueue(sample) }.reduce(_ && _)
@@ -232,8 +233,8 @@ class CaffeOnSpark(@transient val sc: SparkContext) extends Serializable {
     */
   private def shutdownProcessors[T1, T2](conf: Config): Unit = {
     sc.parallelize(0 until conf.clusterSize, conf.clusterSize).map {
-      _ => {
-        val processor = CaffeProcessor.instance[T1, T2]()
+      rank => {
+        val processor = CaffeProcessor.instance[T1, T2](rank)
         processor.stop()
       }
     }.collect()
@@ -326,17 +327,17 @@ class CaffeOnSpark(@transient val sc: SparkContext) extends Serializable {
     val blobNames = if (conf.isFeature)
       conf.features
     else // this is test mode
-      sc.parallelize(0 until clusterSize, clusterSize).map { _ =>
-        val processor = CaffeProcessor.instance[T1, T2]()
+      sc.parallelize(0 until clusterSize, clusterSize).map { rank =>
+        val processor = CaffeProcessor.instance[T1, T2](rank)
         processor.getTestOutputBlobNames
       }.collect()(0)
     val schema = new StructType(Array(StructField("SampleID", StringType, false)) ++ blobNames.map(name => StructField(name, ArrayType(FloatType), false)))
     log.info("Schema:" + schema)
 
     //Phase 3: feed the processors
-    val featureRDD = srcDataRDD.mapPartitions {
-      iter => {
-        val processor = CaffeProcessor.instance[T1, T2]()
+    val featureRDD = srcDataRDD.mapPartitionsWithIndex {
+      (rank, iter) => {
+        val processor = CaffeProcessor.instance[T1, T2](rank)
         if (!processor.solversFinished) {
           processor.start(null)
           val res = iter.map { sample => processor.feedQueue(sample) }.reduce(_ && _)

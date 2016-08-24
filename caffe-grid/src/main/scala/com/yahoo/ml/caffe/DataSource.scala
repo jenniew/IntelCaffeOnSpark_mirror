@@ -3,14 +3,14 @@
 // Please see LICENSE file in the project root for terms.
 package com.yahoo.ml.caffe
 
+import java.util
 import java.util.concurrent.ArrayBlockingQueue
 
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
-
 import caffe.Caffe._
 import com.yahoo.ml.jcaffe._
-import org.slf4j.{LoggerFactory, Logger}
+import org.slf4j.{Logger, LoggerFactory}
 
 /**
  * Base class for various data sources.
@@ -29,10 +29,24 @@ abstract class DataSource[T1, T2](val conf: Config, val layerId : Int, val isTra
   @transient private[caffe] var solverParameter: SolverParameter = null
   @transient private[caffe] var layerParameter: LayerParameter = null
   @transient private[caffe] var transformationParameter:TransformationParameter = null
-  @transient var sourceQueue: ArrayBlockingQueue[T1] = null
+  @transient protected var sourceQueue: ArrayBlockingQueue[T1] = null
+  @transient protected var historyBatch: util.LinkedList[T1] = null
   @transient protected var sourceFilePath : String = null
   @transient protected var batchSize_ : Int = -1
   @transient protected var solverMode: Int = -1
+
+  def offer(item: T1): Boolean = {
+    sourceQueue.put(item)
+    while (historyBatch.size() >= batchSize()) {
+      historyBatch.pop()
+    }
+    historyBatch.add(item)
+    true
+  }
+
+  def clear(): Unit = {
+    sourceQueue.clear()
+  }
 
   /**
    * construct a sample RDD
@@ -58,7 +72,9 @@ abstract class DataSource[T1, T2](val conf: Config, val layerId : Int, val isTra
     transformationParameter = layerParameter.getTransformParam()
 
     //source queue
-    sourceQueue = new ArrayBlockingQueue[T1](1024)
+    sourceQueue = new ArrayBlockingQueue[T1](2048)
+
+    historyBatch = new util.LinkedList[T1]()
 
     true
   }
