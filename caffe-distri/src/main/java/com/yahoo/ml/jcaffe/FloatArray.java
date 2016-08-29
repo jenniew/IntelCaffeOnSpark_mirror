@@ -13,8 +13,8 @@ public class FloatArray extends BaseObject {
      */
     
     public FloatArray(long arrayAddress) {
-	super();
-	this.arrayAddress = arrayAddress;
+	      super();
+	      this.arrayAddress = arrayAddress;
     }
 
     public native float get(int index);

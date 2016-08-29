@@ -88,8 +88,8 @@ bool GetFloatBlobVector(vector< Blob<float>* >& vec, JNIEnv *env, jobjectArray a
             //find the native Blob<float> object
             vec[i] = (Blob<float>*) GetNativeAddress(env, object);
         }
-	//Too many local refs could get created due to the loop, so delete them
-	env->DeleteLocalRef(object);
+        //Too many local refs could get created due to the loop, so delete them
+        env->DeleteLocalRef(object);
     }
 
    return true;

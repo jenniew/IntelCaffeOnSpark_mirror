@@ -33,7 +33,7 @@ public abstract class BaseObject {
      * Invoked by GC
      */
     @Override
-    protected void 	finalize() {
+    protected void finalize() {
         deallocate();
     }
 
