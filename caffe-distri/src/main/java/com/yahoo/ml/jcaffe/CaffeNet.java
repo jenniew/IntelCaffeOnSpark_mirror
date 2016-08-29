@@ -182,6 +182,7 @@ public class CaffeNet extends BaseObject {
     @Deprecated
     public native boolean train(int solver_index, FloatBlob[] data, FloatArray labels);
 
+    public native boolean forwardBackward(int solver_index, FloatBlob[] data, FloatArray labels);
     // TODO: need to print iteration here
     // TODO: we need to broadcast the init weight at the 0 iteration.
     public boolean trainWithPS(int solver_index, FloatBlob[] data, FloatArray labels) {

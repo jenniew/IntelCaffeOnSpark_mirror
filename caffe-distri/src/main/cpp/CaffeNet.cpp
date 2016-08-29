@@ -607,6 +607,31 @@ bool CaffeNet<Dtype>::train(int solver_index, vector< Blob<Dtype>* >& input_data
     return true;
 }
 
+template<typename Dtype>
+bool CaffeNet<Dtype>::forward_backward(int solver_index, vector< Blob<Dtype>* >& input_data, Dtype* input_labels) {
+    //connect input data to input adapter
+    if (input_adapter_[solver_index].get()==NULL) {
+        //initialize the current thread
+        init(solver_index, true);
+    }
+
+    input_adapter_[solver_index]->feed(input_data, input_labels);
+
+    //invoke network's Forward operation
+    shared_ptr<Solver<Dtype> > solver;
+    if (solver_mode_ == Caffe::CPU) {
+        CHECK_EQ(solver_index, 0) << "solver_index must be 0 for local CaffeNet in CPU mode";
+        solver = root_solver_;
+    } else {
+        CHECK(syncs_[solver_index]) << "solver was not initialized properly";
+        solver = syncs_[solver_index]->solver();
+    }
+
+    solver->Step_NoUpdate(1);
+
+    return true;
+}
+
 /**
  * snapshot the model and state
  */

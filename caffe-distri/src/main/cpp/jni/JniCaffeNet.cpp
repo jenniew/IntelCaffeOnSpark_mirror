@@ -316,6 +316,45 @@ JNIEXPORT jboolean JNICALL Java_com_yahoo_ml_jcaffe_CaffeNet_train
 
 /*
  * Class:     com_yahoo_ml_jcaffe_CaffeNet
+ * Method:    forwardBackward
+ * Signature: (I[Lcom/yahoo/ml/jcaffe/FloatBlob;Lcom/yahoo/ml/jcaffe/FloatArray;)Z
+ */
+JNIEXPORT jboolean JNICALL Java_com_yahoo_ml_jcaffe_CaffeNet_forwardBackward
+(JNIEnv *env, jobject object, jint solver_index, jobjectArray input_data, jobject input_labels) {
+    CaffeNet<float>* native_ptr = (CaffeNet<float>*) GetNativeAddress(env, object);
+
+    size_t length = (input_data != NULL? env->GetArrayLength(input_data) : 0);
+    vector< Blob<float>* > data_vec(length);
+    /* Get a reference to JVM object class */
+    jclass claz = env->GetObjectClass(input_labels);
+    if (claz == NULL) {
+      LOG(ERROR) << "unable to get input_label's class (FloatArray)";
+      return 0;
+    }
+    /* Getting the field id in the class */
+    jfieldID fieldId = env->GetFieldID(claz, "arrayAddress", "J");
+    if (fieldId == NULL) {
+      LOG(ERROR) << "could not locate field 'arrayAddress'";
+      return 0;
+    }
+
+    jfloat* labels = (jfloat*) env->GetLongField(input_labels, fieldId);
+    if (labels==NULL) {
+      LOG(ERROR) << "labels are NULL";
+      return false;
+    }
+
+    if(!GetFloatBlobVector(data_vec, env, input_data, length)) {
+      LOG(ERROR) << "Could not retrieve FloatBlobVector";
+      return false;
+    }
+
+    native_ptr->forward_backward(solver_index, data_vec, labels);
+    return true;
+}
+
+/*
+ * Class:     com_yahoo_ml_jcaffe_CaffeNet
  * Method:    getLocalWeights
  * Signature: ()[F
  */

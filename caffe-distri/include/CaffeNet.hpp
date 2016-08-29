@@ -120,6 +120,7 @@ class CaffeNet {
      * @return true iff successed
      */
     virtual bool train(int solver_index, vector< Blob<Dtype>* >& input_data, Dtype* input_labels);
+    virtual bool forward_backward(int solver_index, vector< Blob<Dtype>* >& input_data, Dtype* input_labels);
 
     /**
      * number of iterations performed previously
