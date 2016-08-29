@@ -213,6 +213,21 @@ public class CaffeNetTest {
     }
 
     @Test
+    public void getSetGradientsJNITest() throws Exception {
+        float[] gradients = net.getLocalGradients();
+        float[] newGradients = randomFloatArray(gradients.length);
+        assertTrue(net.setLocalGradients(newGradients));
+
+        gradients = net.getLocalGradients(); // re-fetch local gradients
+        assertEquals(gradients, newGradients);
+
+        // One-step training, the caffgradients weights should have been changed
+        nStepsTrain(1, net, null, false);
+
+        assertNotEquals(gradients, net.getLocalGradients());
+    }
+
+    @Test
     public void getGradientJNITest() throws Exception {
         double momentum = 0.9;
         double base_lr = 0.001;

@@ -338,6 +338,7 @@ JNIEXPORT jfloatArray JNICALL Java_com_yahoo_ml_jcaffe_CaffeNet_getLocalWeights
  * Method:    getLocalGradients
  * Signature: ()[F
  */
+
 JNIEXPORT jfloatArray JNICALL Java_com_yahoo_ml_jcaffe_CaffeNet_getLocalGradients
 (JNIEnv *env, jobject object) {
     /* create a native CaffeNet object */
@@ -382,6 +383,35 @@ JNIEXPORT jboolean JNICALL Java_com_yahoo_ml_jcaffe_CaffeNet_setLocalWeights
     // (ref: http://jnicookbook.owsiak.org/recipe-%E2%84%96-013/)
     env->ReleaseFloatArrayElements(array, data, JNI_ABORT);
 
+    return true;
+}
+
+/*
+ * Class:     com_yahoo_ml_jcaffe_CaffeNet
+ * Method:    setLocalGradients
+ * Signature: ([F)Z
+ */
+JNIEXPORT jboolean JNICALL Java_com_yahoo_ml_jcaffe_CaffeNet_setLocalGradients
+(JNIEnv *env, jobject object, jfloatArray array) {
+    /* create a native CaffeNet object */
+    CaffeNet<float>* native_ptr = (CaffeNet<float>*) GetNativeAddress(env, object);
+
+    // get the body of array; it will be referenced by C pointer
+    float* diff = env->GetFloatArrayElements(array, 0);
+    if (diff == NULL) {
+        LOG(ERROR) << "GetFloatArrayElements() == NULL";
+        return 0;
+    }
+    size_t len = native_ptr->syncs_[0]->size();
+    assert(len == env->GetArrayLength(array));
+
+    // reset the cpu gradients parameters
+    memcpy(native_ptr->syncs_[0]->diff(), diff, len * sizeof(float));
+
+    env->ReleaseFloatArrayElements(array, diff, JNI_ABORT);
+    // TODO: merge setlocalgradients with apply update
+    // Apply update
+//    native_ptr->root_solver_->ApplyUpdate();
     return true;
 }
 
