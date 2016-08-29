@@ -34,7 +34,12 @@ public class CaffeNet extends BaseObject {
     // TODO: Add PSClient object release method
     // TODO: These new added filed should implements Serializable interface
     private final PSClient psClient; // Parameter Server Client
-    private final String weightVector; // global weight vector name on PS-master
+    // TODO: release these two ps-vectors (@shiqing)
+    private final String globalVec; // global vector name on PS-master
+    private final String localVec;  // local vector to push to PS
+                                    // it's **co-partitioned** with globalVec
+
+    private final float scale; // scale = 1 / (float) cluster_size
     private AtomicLong iterationCount = new AtomicLong(0);
 
     /**
@@ -77,38 +82,54 @@ public class CaffeNet extends BaseObject {
       int connection_type,
       int start_device_id,
       String psMasterAddr,
-      String weightVector) throws IOException {
+      String globalVector) throws IOException {
         solverParameter_ = Utils.GetSolverParam(solver_conf_file);
         nodeRank = node_rank;
+        scale = 1 / (float) cluster_size;
+
         if (!allocate(solver_conf_file, input_model_file, input_state_file,
           num_local_devices, cluster_size, node_rank, isTraining,
           connection_type, start_device_id))
             throw new RuntimeException("Failed to create CaffeNet object");
 
-        if (psMasterAddr != null && !psMasterAddr.isEmpty()) {
-            // TODO: Add psClient connection check
-            LOG.info("PS-Master Address: " + psMasterAddr + ", weightVector"
-              + ": " + weightVector + ", my rank: " + node_rank);
-            this.psClient = new PSClient(psMasterAddr);
-            this.weightVector = weightVector;
-
-            // Note that each ps context is local and all clients are the same
-            String psContext = "Caffe_On_Spark_PS_" + weightVector;
-            LOG.info("CaffeNet: set local ps client context, rank: " + node_rank);
-            psClient.setContext(psContext);
-
-            // create global weight vector on the PS with overwrite
-            if (nodeRank == 0) {
-                int numFeatures = this.getLocalGradients().length; // TODO: further check
-                LOG.info("CaffeNet: send create vector [" + weightVector + "] request to "
-                  + "PS, size: " + numFeatures);
-                psClient.createVector(weightVector, true, numFeatures, DataType.Float, true);
-            }
-        } else {
+        if (psMasterAddr == null || psMasterAddr.isEmpty()) {
             LOG.error("NO PS Master socket Address is set.");
             this.psClient = null;
-            this.weightVector = null;
+            this.globalVec = null;
+            this.localVec = null;
+            return ;
         }
+        ///// CaffeOnSpark with parameter server
+        // TODO: Add psClient connection check
+        LOG.info("PS-Master Address: " + psMasterAddr + ", globalVec"
+          + ": " + globalVector + ", my rank: " + node_rank);
+        this.psClient = new PSClient(psMasterAddr);
+        this.globalVec = globalVector;
+        this.localVec = globalVec + "_" + nodeRank;
+
+        // Note that each ps context is local and all clients are the same
+        String psContext = "Caffe_On_Spark_PS_" + globalVec;
+        LOG.info("set local ps client context at node with rank {}", nodeRank);
+        psClient.setContext(psContext);
+
+        if (nodeRank == 0) { // create global gradient vector on the PS with overwrite
+            int numFeatures = this.getLocalGradients().length; // TODO: further check
+            LOG.info("CaffeNet: send create vector request, vecor={}, size={}",
+              globalVector, numFeatures);
+            psClient.createVector(globalVec, true, numFeatures, DataType.Float, true);
+        } else {
+            boolean logged = false;
+            while (!psClient.existVector(globalVector)) {
+                if (!logged) {
+                    logged = true;
+                    LOG.info("rank={} waiting for rank=0 to create global vec", nodeRank);
+                }
+                // make sure that rank 0 has already create this.globalVec
+            }
+        }
+        LOG.info("rank={} create local vector={}, co-partitioned with global vector",
+          nodeRank, localVec);
+        psClient.createVector(localVec, globalVec); // localVec is co-partitioned with globalVec
     }
 
     private native boolean allocate(String solver_conf_file,
@@ -189,45 +210,90 @@ public class CaffeNet extends BaseObject {
     // TODO: we need to broadcast the init weight at the 0 iteration.
     public boolean trainWithPS(int solver_index, FloatBlob[] data, FloatArray labels) {
         iterationCount.incrementAndGet();
-//        try {
-//            LOG.info("trainWithPS: read weights from PS and set to local weight, rank: " + nodeRank);
-//            long getWeightTimeStart = System.currentTimeMillis();
-//            float[] weights = ((org.parameterserver.protocol.FloatArray)psClient.getVector(
-//                    weightVector).getValues()).getValues();
-//            long getWeightTimeEnd = System.currentTimeMillis();
-//            LOG.info("time to get weight vector: " + (getWeightTimeEnd - getWeightTimeStart) + " .ms" );
-//
-//            long setWeightTimeStart = System.currentTimeMillis();
-//            this.setLocalWeights(weights);
-//            long setWeightTimeEnd = System.currentTimeMillis();
-//            LOG.info("time to set weight vector: " + (setWeightTimeEnd - setWeightTimeStart) + " .ms" );
-//        } catch (IOException ioe) {
-//            LOG.error("PS vector client read IOException...", ioe);
-//        }
-        LOG.info("trainWithPS: do one-step training with local caffe, rank: " + nodeRank);
-        // TODO: need to separate this to be 1)forward+backward  2) applyupdate.
-        boolean succ = train(solver_index, data, labels);
-
+        LOG.info("============= iter={}, rank={} =============", iterationCount.get(), nodeRank);
+        long oneStepTime = 0;
+        long fbTimeStart = System.currentTimeMillis();
+        forwardBackward(solver_index, data, labels);
+        long fbTimeEnd = System.currentTimeMillis();
+        LOG.info("forward backward time={} ms", (fbTimeEnd - fbTimeStart));
+        oneStepTime += (fbTimeEnd - fbTimeStart);
+        long pullTime, pushTime;
         try {
-            LOG.info("trainWithPS: getLocalGradients, rank: " + nodeRank);
+            long glgTimeStart = System.currentTimeMillis();
             float[] gradients = this.getLocalGradients();
-            // TODO: vectorAxpby   1/clustersize*gradient,  or scale the gradient locally.
-            psClient.add2Vector(weightVector, intArray(gradients.length), new org
-              .parameterserver.protocol.FloatArray(gradients));
+            long glgTimeEnd = System.currentTimeMillis();
+            long ggTime = glgTimeEnd - glgTimeStart;
+            oneStepTime += ggTime;
+
+            long uvTimeStart = System.currentTimeMillis();
+            psClient.updateVector(localVec, new org.parameterserver.protocol.FloatArray(gradients));
+            long uvTimeEnd = System.currentTimeMillis();
+
+            long vpTimeStart = System.currentTimeMillis();
+            psClient.vectorAxpby(globalVec, 1.0, localVec, 1.0);
+            long vpTimeEnd = System.currentTimeMillis();
+
+            long uvTime = uvTimeEnd - uvTimeStart;
+            long vpTime = vpTimeEnd - vpTimeStart;
+            pushTime = (uvTime + vpTime) + (glgTimeEnd - glgTimeStart);
+            oneStepTime += pushTime;
+            LOG.info("get gradient={} ms, update localVec={} ms, psClient.vectorAxpby={} ms, "
+              + "total PUSH gradients time={} ms, gradients.len={}", ggTime, uvTime, vpTime,
+              pushTime, gradients.length);
+
         } catch (IOException ioe) {
-            LOG.error("PS vector client write IOException...", ioe);
+            LOG.error("PS vector client write IOException {}", ioe);
         }
 
-        // set local caffe weights with values fetch from ps
-        LOG.info("trainWithPS: send PS-BSP sync request, rank: " + nodeRank + " iteration: " + this.iterationCount.get());
         try {
-            LOG.info("trainWithPS: send PS-BSP sync request, rank: " + nodeRank);
+            long bspSyncTimeStart = System.currentTimeMillis();
+            // FIXME: The following logic is incorrect
+            if (nodeRank == 0) { // scale global gradients at this step
+                LOG.info("scale global vector, vector={}, scale={}", globalVec, scale);
+                long scaleGVTimeStart = System.currentTimeMillis();
+                psClient.vectorAxpby(globalVec, scale, localVec, 0);
+                long scaleGVTimeEnd = System.currentTimeMillis();
+                LOG.info("scale global vector time={} ms", (scaleGVTimeEnd - scaleGVTimeStart));
+            }
             psClient.bspSync();
+
+            long bspSyncTimeEnd = System.currentTimeMillis();
+            LOG.info("PS BSP sync time={} ms", (bspSyncTimeEnd - bspSyncTimeStart));
+            oneStepTime += (bspSyncTimeEnd - bspSyncTimeStart);
+
         } catch (IOException ioe) {
-            LOG.error("PS BSP sync exception..." + ioe);
+            LOG.error("PS BSP sync exception {}", ioe);
         }
-        // TODO: add update here.
-        return succ;
+        // Update local gradients from PS global gradients
+        try {
+            long ggTimeStart = System.currentTimeMillis();
+            float[] gradients = ((org.parameterserver.protocol.FloatArray)psClient.getVector(globalVec)
+              .getValues()).getValues();
+            long ggTimeEnd = System.currentTimeMillis();
+            long ggTime = ggTimeEnd - ggTimeStart;
+
+            pullTime = ggTime;
+
+            long sauTimeStart = System.currentTimeMillis();
+            this.setLocalGradients(gradients);
+            long sauTimeEnd = System.currentTimeMillis();
+            long ssTime = sauTimeEnd - sauTimeStart;
+            pullTime += ssTime;
+            oneStepTime += pullTime;
+
+            long auTimeStart = System.currentTimeMillis();
+            this.applyUpdate();
+            long auTimeEnd = System.currentTimeMillis();
+            long auTime = auTimeEnd - auTimeStart;
+            oneStepTime += auTime;
+            LOG.info("psClient.getVector={} ms, set gradients={} ms, apply update={} ms, total "
+              + "PULL gradient={} ms, total one-step training={} ms", ggTime, ssTime, auTime,
+              pullTime, oneStepTime);
+            LOG.info("===============================================");
+        }  catch (IOException ioe) {
+            LOG.error("PS read vector exception {}", ioe);
+        }
+        return true;
     }
 
     /**
@@ -236,21 +302,6 @@ public class CaffeNet extends BaseObject {
     public void closePS() {
         LOG.info("CaffeNet: send close ps client request");
         psClient.close();
-    }
-
-    // TODO: Add this method to TestUtils class
-
-  /**
-   * Create an int array filled with
-   * @param size
-   * @return
-   */
-    public static int[] intArray(int size) {
-        int[] data = new int[size];
-        for (int i = 0; i < size; i++) {
-            data[i] = i;
-        }
-        return data;
     }
 
     /**

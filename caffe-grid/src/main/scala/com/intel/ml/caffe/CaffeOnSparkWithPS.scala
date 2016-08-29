@@ -23,7 +23,10 @@ object CaffeOnSparkWithPS {
     //Caffe-on-Spark configuration
     var conf = new Config(sc, args)
     bootstrap(conf, sc)
+    // TODO: Add exit processing
   }
+
+  // TODO: delete isLocal
   def bootstrap(conf: Config, sc: SparkContext, isLocal: Boolean = false): Unit = {
     //training if specified
     val caffeSpark = new CaffeOnSparkWithPS(sc)
@@ -60,6 +63,7 @@ class CaffeOnSparkWithPS(@transient val sc: SparkContext) extends Serializable {
     * @param source input data source
     */
   def train[T1, T2](source: DataSource[T1, T2], isLocal: Boolean): Unit = {
+    // TODO: The parameter isLocal never used
     var trainDataRDD: RDD[T1] = source.makeRDD(sc)
     if (trainDataRDD == null) {
       log.info("No training data is given")
@@ -74,16 +78,20 @@ class CaffeOnSparkWithPS(@transient val sc: SparkContext) extends Serializable {
     psClient.setContext("Caffe_On_Spark_PS_" + conf.psWeightVector)
     psClient.bspInitializeContext(conf.clusterSize)
 
+    //val loopRDD = sc.parallelize(0 until conf.clusterSize, conf.clusterSize) // FIXME
     // Phase 2: new one CaffeProcessor object for each node
-    log.info("phase 02: new one CaffeProcessor object for each node")
+    log.info(s"phase 02: new one CaffeProcessor object for ${conf.clusterSize} node")
     sc.parallelize(0 until conf.clusterSize, conf.clusterSize).foreach { rank: Int =>
       CaffeProcessor.instance[T1, T2](source, rank)
     }
 
     //Phase 3: set up the processors
-    log.info("phase 03: start each processor")
+    log.info("phase 03: Initialize weights on each node and start each processor")
+    // TODO: how to initialize global weight elegantly
+//    val broadWeights = sc.broadcast()
     sc.parallelize(0 until conf.clusterSize, conf.clusterSize).foreach {rank: Int =>
       CaffeProcessor.instance[T1, T2](rank).start(null)
+//      CaffeProcessor.instance[T1, T2](rank).start(broadWeights.value)
     }
 
     if (trainDataRDD.getNumPartitions != conf.clusterSize) {
@@ -91,7 +99,8 @@ class CaffeOnSparkWithPS(@transient val sc: SparkContext) extends Serializable {
       trainDataRDD.repartition(conf.clusterSize)
     }
 
-    //Phase 5: feed the processor
+    //Phase 4: feed the processor
+    log.info("phase 4: feed the processor")
     var continue: Boolean = true
     val clusterSize = conf.clusterSize
     while (continue) {
@@ -111,7 +120,8 @@ class CaffeOnSparkWithPS(@transient val sc: SparkContext) extends Serializable {
       }.reduce(_ && _)
     }
 
-    //Phase 6: shutdown processors
+    //Phase 5: shutdown processors
+    log.info("phase 5: shutdown processors")
     shutdownProcessors(conf)
   }
 

@@ -19,6 +19,7 @@ object CaffeProcessor {
   val log: Logger = LoggerFactory.getLogger(this.getClass)
 
   val rankToInstance = new util.HashMap[Int, CaffeProcessor[_, _]]
+  var rank_ = -1
 
   def instance[T1, T2](source: DataSource[T1, T2], rank: Int): CaffeProcessor[T1, T2] = synchronized {
     try {
@@ -26,6 +27,7 @@ object CaffeProcessor {
       if (!rankToInstance.containsKey(rank)) {
         val myInstance = new CaffeProcessor[T1, T2](source, rank)
         rankToInstance.put(rank, myInstance)
+        rank_ = rank
       }
       rankToInstance.get(rank).asInstanceOf[CaffeProcessor[T1, T2]]
     } catch {
@@ -37,7 +39,15 @@ object CaffeProcessor {
   }
   // Assuming it would be always created at this point.
   def instance[T1, T2](rank: Int): CaffeProcessor[T1, T2] = {
-    rankToInstance.get(rank).asInstanceOf[CaffeProcessor[T1, T2]]
+    // TODO: fix this rank not match problem
+    if (rankToInstance.containsKey(rank)) {
+      rankToInstance.get(rank).asInstanceOf[CaffeProcessor[T1, T2]]
+    } else if (!rankToInstance.isEmpty){
+      log.info("rank not match, origin: " + rank_ + ", new: " + rank);
+      rankToInstance.get(rank_).asInstanceOf[CaffeProcessor[T1, T2]]
+    } else {
+      throw new RuntimeException("Here should never be reached")
+    }
   }
 }
 
@@ -170,7 +180,6 @@ class CaffeProcessor[T1, T2](val source: DataSource[T1, T2],
 
   //feed data to train queue
   def feedQueue(item: T1): Boolean = {
-    log.info("CaffeProcessor::feedQueue, rank: " + rank)
     source.offer(item)
     !solvers.get(0).isCompleted
   }
@@ -314,7 +323,7 @@ class CaffeProcessor[T1, T2](val source: DataSource[T1, T2],
       val maxIter: Int = caffeNet.getMaxIter(syncIdx)
       caffeNet.init(syncIdx, true)
       for (it <- initIter until maxIter if (tpl != STOP_MARK)) {
-        log.info("Start Iteration: " + it + ", rank: " + rank)
+//        log.info("Start Iteration: " + it + ", rank: " + rank)
         tpl = queuePair.Full.take //TODO: Note that BlockingQueue.take may be blocked until not null
         if (tpl == STOP_MARK)  {
           log.info("STOP_MARK: queuePair.Free.put(tpl), rank: " + rank)

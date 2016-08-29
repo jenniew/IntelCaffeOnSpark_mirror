@@ -56,3 +56,5 @@ caffe-grid/src/main/python/
 
 # OSX dir files
 .DS_Store
+
+/python_doc/_build/

@@ -42,7 +42,7 @@ object ParameterServerTest {
       "-psMasterAddr", "localhost:55778", //FIXME: reset the port to your ps mini-cluster's for test
       "-psWeightVector", "w-" + Random.nextLong().toString
     )
-
+    // TODO: make sure that test data dir has been generated
     // setup parameter server
     val psConf = new org.parameterserver.Configuration()
     psConf.set(PSConfigKeys.PS_CHECKPOINT_PATH_KEY, "file://" + new File("target/test/data/").getAbsolutePath())
@@ -52,6 +52,6 @@ object ParameterServerTest {
 
     //
     CaffeOnSparkWithPS.bootstrap(conf, sc, true)
-    Thread.sleep(100000000)
+    Thread.sleep(100000000) // TODO: delete me
   }
 }

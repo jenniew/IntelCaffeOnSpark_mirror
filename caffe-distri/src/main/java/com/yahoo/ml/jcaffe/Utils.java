@@ -24,4 +24,32 @@ public class Utils {
         reader.close();
         return net_builder.build();
     }
+
+    /**
+     * Scale a float array.
+     *
+     * @param array
+     * @param scale
+     * @return
+     */
+    public static float[] arrayScale(float[] array, double scale) {
+        for (int i = 0; i < array.length;i ++) {
+            array[i] *= scale;
+        }
+        return array;
+    }
+
+    /**
+     * Create an int array filled with 0~(size-1).
+     *
+     * @param size
+     * @return
+     */
+    public static int[] intArray(int size) {
+        int[] data = new int[size];
+        for (int i = 0; i < size; i++) {
+            data[i] = i;
+        }
+        return data;
+    }
 }

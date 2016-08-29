@@ -243,6 +243,7 @@ public class CaffeNetTest {
     public void getGradientJNITest() throws Exception {
         double momentum = 0.9;
         double base_lr = 0.001;
+        double weight_decay = 0.0005;
         // Get weights from local caffe before training
         float[] weights = new float[net.getLocalWeights().length];
         for (int i = 0; i < weights.length; i++) {
@@ -264,12 +265,12 @@ public class CaffeNetTest {
         float[] expectedNewWeight = new float[weights.length];
         for (int i = 0; i < weights.length; i++) {
             expectedNewWeight[i] = (float) (weights[i] + (momentum * gradients[i]
-              - base_lr * gradients2[i]));
+              - base_lr * (gradients2[i] + weight_decay * weights[i])));
         }
 
         assertEquals(gradients.length, gradients2.length);
         // TODO: how to test gradients? (@shiqing) Then comment me back
-//        org.junit.Assert.assertArrayEquals(expectedNewWeight, newWeights, (float) 1e-5);
+//        org.junit.Assert.assertArrayEquals(expectedNewWeight, newWeights, (float) 5e-7);
         assertEquals(weights.length, gradients.length);
     }
 
