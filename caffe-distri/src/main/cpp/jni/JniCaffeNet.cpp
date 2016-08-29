@@ -355,6 +355,19 @@ JNIEXPORT jboolean JNICALL Java_com_yahoo_ml_jcaffe_CaffeNet_forwardBackward
 
 /*
  * Class:     com_yahoo_ml_jcaffe_CaffeNet
+ * Method:    applyUpdate
+ * Signature: ()Z
+ */
+JNIEXPORT jboolean JNICALL Java_com_yahoo_ml_jcaffe_CaffeNet_applyUpdate
+(JNIEnv *env, jobject object) {
+    CaffeNet<float>* native_ptr = (CaffeNet<float>*) GetNativeAddress(env, object);
+
+    native_ptr->root_solver_->ApplyUpdate();
+    return true;
+}
+
+/*
+ * Class:     com_yahoo_ml_jcaffe_CaffeNet
  * Method:    getLocalWeights
  * Signature: ()[F
  */

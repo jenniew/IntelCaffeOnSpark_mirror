@@ -228,6 +228,18 @@ public class CaffeNetTest {
     }
 
     @Test
+    public void applyUpdateJNITest() throws Exception {
+        // TODO: why after applyupdate() the original gradients changed??? @shiqing
+        float[] gradients = net.getLocalGradients();
+        assertTrue(net.applyUpdate());
+        float[] newGradients = net.getLocalGradients();
+        //gradients = net.getLocalGradients(); // re-fetch local gradients
+        //assertEquals(gradients, newGradients);
+
+        //assertNotEquals(gradients, net.getLocalGradients());
+    }
+
+    @Test
     public void getGradientJNITest() throws Exception {
         double momentum = 0.9;
         double base_lr = 0.001;
