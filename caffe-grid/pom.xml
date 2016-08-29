@@ -18,7 +18,7 @@
     <maven.compiler.target>1.7</maven.compiler.target>
     <hadoop.version>2.5.0</hadoop.version>
     <scala.version>2.10.4</scala.version>
-    <slf4j.version>1.6.6</slf4j.version>
+    <slf4j.version>1.7.7</slf4j.version>
     <spark.version>1.6.0</spark.version>
     <lmdbjni.version>0.4.6</lmdbjni.version>
     <lmdbjni.version>0.4.6</lmdbjni.version>
