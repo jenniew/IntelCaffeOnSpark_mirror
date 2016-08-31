@@ -5,10 +5,14 @@
 #define CAFFE_DISTRI_SOCKET_SYNC_CPU_HPP_
 
 #include <boost/shared_ptr.hpp>
+#include <boost/thread.hpp>
+#include <boost/bind.hpp>
 #include <vector>
 #include "caffe/solver.hpp"
 #include "util/parallel_cpu.hpp"
 #include "util/socket.hpp"
+#include "util/threadpool/threadpool.hpp"
+
 
 namespace caffe {
 /**
@@ -66,6 +70,8 @@ class SocketSyncCPU : public P2PSyncCPU<Dtype> {
   using Params<Dtype>::size_;
   using Params<Dtype>::data_;
   using Params<Dtype>::diff_;
+  int iter_count_;
+  boost::threadpool::pool tp;
   DISABLE_COPY_AND_ASSIGN(SocketSyncCPU);
 };
 

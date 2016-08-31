@@ -20,7 +20,9 @@ SocketSyncCPU<Dtype>::SocketSyncCPU(shared_ptr<Solver<Dtype> > root_solver,
     data_send_(peers.size()),
     data_recv_(peers.size()),
     diff_send_(peers.size()),
-    diff_recv_(peers.size()) {
+    diff_recv_(peers.size()),
+    iter_count_(0),
+    tp(peers.size() < 16 ? peers.size() : 16 ) { // TODO: should make this configurable
 
   chunk(rank_, &own_offs_, &own_size_);
   for (int peer = 0; peer < peers_.size(); ++peer) {
@@ -97,7 +99,13 @@ SocketSyncCPU<Dtype>::~SocketSyncCPU() {
 template<typename Dtype>
 void SocketSyncCPU<Dtype>::on_start() {
   // Send weights to each node
+  iter_count_ ++;
+  LOG(INFO) << "###### iteration: " << this->iter_count_ << "rank:" << rank_;
   sync();
+}
+
+void write_task(SocketBuffer * socketBuffer_ptr) {
+	socketBuffer_ptr->Write();
 }
 
 template<typename Dtype>
@@ -110,7 +118,9 @@ void SocketSyncCPU<Dtype>::on_gradients_ready() {
     if (peer == peers_.size()) {
       peer = 0;
     }
-    diff_send_[peer]->Write();
+//    diff_send_[peer]->Write();
+    tp.schedule(boost::bind(write_task, diff_send_[peer].get()));
+
     peer++;
   }
   // Sum gradients as they are received
@@ -136,7 +146,10 @@ void SocketSyncCPU<Dtype>::sync() {
     if (peer == peers_.size()) {
       peer = 0;
     }
-    data_send_[peer]->Write();
+//    data_send_[peer]->Write();
+
+    tp.schedule(boost::bind(write_task, data_send_[peer].get()));
+
     peer++;
   }
 

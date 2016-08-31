@@ -3,8 +3,12 @@
 // Please see LICENSE file in the project root for terms.
 package com.yahoo.ml.caffe
 
+import com.yahoo.ml.caffe.tools.Binary2Sequence
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.Path
 import org.apache.spark.{SparkConf, SparkContext}
 import org.slf4j.LoggerFactory
+import org.testng.Assert._
 
 object CaffeOnSparkTest {
   val log = LoggerFactory.getLogger(this.getClass)
@@ -28,13 +32,21 @@ object CaffeOnSparkTest {
       "-model", "file:" + ROOT_PATH + "caffe-grid/target/model.h5",
       "-imageRoot", "file:" + ROOT_PATH + "data/images",
       "-labelFile", "file:" + ROOT_PATH + "data/images/labels.txt",
-      "-clusterSize", "2",
+      "-clusterSize", "4",
       "-devices", "1",
       "-connection", "ethernet",
       "-train"
     )
 
     conf = new  com.yahoo.ml.caffe.Config(sc, args)
+
+    val seq_file_path = "file:"+ROOT_PATH+"caffe-grid/target/seq_image_files"
+    val path = new Path(seq_file_path)
+    val fs = path.getFileSystem(new Configuration)
+    if (fs.exists(path)) fs.delete(path, true)
+    val b2s = new Binary2Sequence(sc, conf)
+    assertNotNull(b2s)
+    b2s.makeRDD().saveAsSequenceFile(seq_file_path)
 
     CaffeOnSpark.bootstrap(conf, sc)
   }
