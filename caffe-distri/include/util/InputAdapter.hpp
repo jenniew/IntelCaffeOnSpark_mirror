@@ -9,7 +9,6 @@
 
 #include "common.hpp"
 #include "caffe/caffe.hpp"
-#include "extra_layers.hpp"
 
 template<typename Dtype>
 class InputAdapter {

@@ -3,29 +3,43 @@
 // Please see LICENSE file in the project root for terms.
 package com.yahoo.ml.caffe
 
-import java.util.concurrent.{ArrayBlockingQueue, ForkJoinPool, ConcurrentHashMap}
+import java.util
+import java.util.concurrent.{ArrayBlockingQueue, ConcurrentHashMap, ForkJoinPool}
 import java.util.ArrayList
 
-import caffe.Caffe._
 import com.yahoo.ml.jcaffe._
-import org.slf4j.{LoggerFactory, Logger}
+import org.slf4j.{Logger, LoggerFactory}
 
 import scala.concurrent.duration.Duration
-import scala.concurrent.{Await, Future, ExecutionContext}
+import scala.concurrent.{Await, ExecutionContext, Future}
 import org.apache.spark.sql.Row
+
 import scala.collection.immutable.Map
 import scala.collection.mutable.ArrayBuffer
 import java.util.concurrent.atomic.AtomicReference
 
 private[caffe] object CaffeProcessor {
-  var myInstance: CaffeProcessor[_, _] = null
-  def instance[T1, T2](sources: Array[DataSource[T1, T2]], rank: Int): CaffeProcessor[T1, T2] = {
-    myInstance = new CaffeProcessor[T1, T2](sources, rank)
-    myInstance.asInstanceOf[CaffeProcessor[T1, T2]]
+  // add here for debugging only otherwise singletons is sufficient.
+  val rankToInstance = new util.HashMap[Int, CaffeProcessor[_, _]]
+
+  def instance[T1, T2](sources: Array[DataSource[T1, T2]], rank: Int): CaffeProcessor[T1, T2] = synchronized {
+    if (!rankToInstance.containsKey(rank)) {
+      val myInstance = new CaffeProcessor[T1, T2](sources, rank)
+      rankToInstance.put(rank, myInstance)
+      return myInstance
+    } else {
+      throw new RuntimeException("Should not enter here, pls check the invoking sequence")
+    }
   }
 
-  def instance[T1, T2](): CaffeProcessor[T1, T2] = {
-    myInstance.asInstanceOf[CaffeProcessor[T1, T2]]
+  def instance[T1, T2](rank: Int): CaffeProcessor[T1, T2] = synchronized {
+    if (rankToInstance.containsKey(rank)) {
+      return rankToInstance.get(rank).asInstanceOf[CaffeProcessor[T1, T2]]
+    } else {
+      assert(rankToInstance.size() == 1)
+        val key = rankToInstance.keySet().iterator().next()
+        return rankToInstance.get(key).asInstanceOf[CaffeProcessor[T1, T2]]
+    }
   }
 }
 
@@ -260,63 +274,6 @@ private[caffe] class CaffeProcessor[T1, T2](val sources: Array[DataSource[T1, T2
     caffeNet.init(solverIdx)
 
     try {
-      if (source.useCoSDataLayer()) {
-        //this uses CoSDataLayer
-        val batchSize = source.batchSize()
-        val numTops = source.getNumTops()
-        val dataHolder = source.dummyDataHolder()
-        val data:Array[FloatBlob] = source.dummyDataBlobs()
-        val sampleIds = new Array[String](batchSize)
-        val dataType: Array[CoSDataParameter.DataType] = new Array(numTops)
-        val transformParams: Array[TransformationParameter] = new Array(numTops)
-        val transformers: Array[FloatDataTransformer] = new Array(numTops)
-        for (i <- 0 until numTops) {
-          dataType(i) = source.getTopDataType(i)
-          transformParams(i) = source.getTopTransformParam(i)
-          if (transformParams(i) != null) {
-            transformers(i) = new FloatDataTransformer(
-              transformParams(i), source.isTrain)
-          } else {
-            transformers(i) = null
-          }
-        }
-        //initialize free queue now that device is set
-        initialFreeQueue(sourceId, queuePair)
-        while (!solvers.get(solverIdx).isCompleted && source.nextBatch(sampleIds, dataHolder)) {
-          val dataArray = dataHolder.asInstanceOf[Array[Any]]
-          val tpl = takeFromQueue(queuePair.Free, queueIdx)
-          if (tpl != null) {
-            sampleIds.copyToArray(tpl._1)
-            for (i <- 0 until numTops) {
-              dataType(i) match {
-                case CoSDataParameter.DataType.STRING |
-                     CoSDataParameter.DataType.INT |
-                     CoSDataParameter.DataType.FLOAT |
-                     CoSDataParameter.DataType.INT_ARRAY |
-                     CoSDataParameter.DataType.FLOAT_ARRAY => {
-                  if (transformers(i) != null) {
-                    transformers(i).transform(dataArray(i).asInstanceOf[FloatBlob], data(i))
-                  }
-                }
-
-                case CoSDataParameter.DataType.RAW_IMAGE |
-                     CoSDataParameter.DataType.ENCODED_IMAGE => {
-                  if (transformers(i) != null) {
-                    transformers(i).transform(dataArray(i).asInstanceOf[MatVector], data(i))
-                  } else {
-                    throw new Exception("Images require a transformer to convert from MatVector to FloatBlob")
-                  }
-                }
-              }
-              if (transformers(i) != null)
-                tpl._2(i).copyFrom(data(i))
-              else
-                tpl._2(i).copyFrom(dataArray(i).asInstanceOf[FloatBlob])
-            }
-            putIntoQueue(tpl, queuePair.Full, queueIdx)
-          }
-        }
-      } else {
         //This uses legacy memory data layer, will be removed in the future.
         var transformer: FloatDataTransformer = null
         if (source.transformationParameter != null) {
@@ -368,7 +325,6 @@ private[caffe] class CaffeProcessor[T1, T2](val sources: Array[DataSource[T1, T2
             putIntoQueue(tpl, queuePair.Full, queueIdx)
           }
         }
-      }
     }
     catch {
       case ex: Exception => {

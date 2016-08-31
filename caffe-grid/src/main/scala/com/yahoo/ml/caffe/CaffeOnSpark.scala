@@ -36,17 +36,10 @@ import java.net._
 import org.apache.spark.rdd._
 import scala.reflect.ClassTag
 
-object CaffeOnSpark {
+object IntelCaffeOnSpark {
   private val log: Logger = LoggerFactory.getLogger(this.getClass)
-  def main(args: Array[String]) {
-    val sc_conf = new SparkConf()
-    sc_conf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
-      .set("spark.scheduler.minRegisteredResourcesRatio", "1.0")
 
-    val sc: SparkContext = new SparkContext(sc_conf)
-    //Caffe-on-Spark configuration
-    var conf = new Config(sc, args)
-
+  def bootstrap(conf: Config, sc: SparkContext): Unit = {
     //training if specified
     val caffeSpark = new CaffeOnSpark(sc)
     if (conf.isTraining ){
@@ -95,16 +88,26 @@ object CaffeOnSpark {
 
     }
   }
+  def main(args: Array[String]): Unit = {
+    val sc_conf = new SparkConf()
+    sc_conf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+      .set("spark.scheduler.minRegisteredResourcesRatio", "1.0")
+
+    val sc: SparkContext = new SparkContext(sc_conf)
+    //Caffe-on-Spark configuration
+    var conf = new Config(sc, args)
+    bootstrap(conf, sc)
+  }
 }
 
 
 /**
- * CaffeOnSpark is the main class for distributed deep learning.
- * It will launch multiple Caffe cores within Spark executors, and conduct coordinated learning from HDFS datasets.
- *
- * @param sc Spark Context
- */
-class CaffeOnSpark(@transient val sc: SparkContext) extends Serializable {
+  * CaffeOnSpark is the main class for distributed deep learning.
+  * It will launch multiple Caffe cores within Spark executors, and conduct coordinated learning from HDFS datasets.
+  *
+  * @param sc Spark Context
+  */
+class IntelCaffeOnSpark(@transient val sc: SparkContext) extends Serializable {
   @transient private val log: Logger = LoggerFactory.getLogger(this.getClass)
   @transient val sqlContext = new sql.SQLContext(sc)
   @transient val floatarray2doubleUDF = udf((float_features: Seq[Float]) => {
@@ -172,9 +175,9 @@ class CaffeOnSpark(@transient val sc: SparkContext) extends Serializable {
   }
 
   /**
-   * Training with a specific data source
-   * @param source input data source
-   */
+    * Training with a specific data source
+    * @param source input data source
+    */
   def train[T1, T2](source: DataSource[T1, T2]): Unit = {
     var trainDataRDD: RDD[T1] = source.makeRDD(sc)
     if (trainDataRDD == null) {
@@ -213,43 +216,43 @@ class CaffeOnSpark(@transient val sc: SparkContext) extends Serializable {
       log.info("Partition size: min=" + minPartSize + " max=" + sizeRDD.max())
     }
 
-    //Phase 3: feed the processor    
+    //Phase 3: feed the processor
     var continuetrain: Boolean = true
     while (continuetrain) {
-      	//conduct training with dataRDD
-      	continuetrain = trainDataRDD.mapPartitions {
-       	  iter => {
-            var res = false
-            //feed training data from iterator
-            val processor = CaffeProcessor.instance[T1, T2]()
-            if (!processor.solversFinished) {
-              if (minPartSize > 0) {
-                var idx = 0
-                //the entire iterator needs to be consumed, otherwise GC won't be triggered
-                res = iter.map { sample => {
-                  idx += 1
-                  if (idx <= minPartSize) processor.feedQueue(0, sample) else true
-                }}.reduce(_ && _)
-              } else {
-                res = iter.map { sample => processor.feedQueue(0, sample) }.reduce(_ && _)
-              }
-              processor.solversFinished = !res
+      //conduct training with dataRDD
+      continuetrain = trainDataRDD.mapPartitions {
+        iter => {
+          var res = false
+          //feed training data from iterator
+          val processor = CaffeProcessor.instance[T1, T2]()
+          if (!processor.solversFinished) {
+            if (minPartSize > 0) {
+              var idx = 0
+              //the entire iterator needs to be consumed, otherwise GC won't be triggered
+              res = iter.map { sample => {
+                idx += 1
+                if (idx <= minPartSize) processor.feedQueue(0, sample) else true
+              }}.reduce(_ && _)
+            } else {
+              res = iter.map { sample => processor.feedQueue(0, sample) }.reduce(_ && _)
             }
-            Iterator(res)
+            processor.solversFinished = !res
           }
-        }.reduce(_ && _)
-      }
-    
+          Iterator(res)
+        }
+      }.reduce(_ && _)
+    }
+
     //Phase 4: shutdown processors
     shutdownProcessors(conf)
   }
 
   /**
-   * Training interleaved with validation
-   * @param sourceTrain input data source for training
-   * @param sourceValidation input data source for validation
-   * @return DataFrame of validation results
-   */
+    * Training interleaved with validation
+    * @param sourceTrain input data source for training
+    * @param sourceValidation input data source for validation
+    * @return DataFrame of validation results
+    */
   def trainWithValidation[T1, T2](sourceTrain: DataSource[T1, T2], sourceValidation: DataSource[T1, T2]): DataFrame = {
     log.info("interleave")
     var trainDataRDD: RDD[T1] = sourceTrain.makeRDD(sc)
@@ -380,8 +383,8 @@ class CaffeOnSpark(@transient val sc: SparkContext) extends Serializable {
   }
 
   /**
-   * a utility function for shutting processor thread pool
-   */
+    * a utility function for shutting processor thread pool
+    */
   private def shutdownProcessors[T1, T2](conf: Config): Unit = {
     sc.parallelize(0 until conf.clusterSize, conf.clusterSize).map {
       _ => {
@@ -392,12 +395,12 @@ class CaffeOnSpark(@transient val sc: SparkContext) extends Serializable {
   }
 
   /**
-   * Test with a specific data source.
-   * Test result will be saved into HDFS file per configuration.
-   *
-   * @param source input data source
-   * @return key/value map for mean values of output layers
-   */
+    * Test with a specific data source.
+    * Test result will be saved into HDFS file per configuration.
+    *
+    * @param source input data source
+    * @return key/value map for mean values of output layers
+    */
   def test[T1, T2](source: DataSource[T1, T2]): Map[String, Seq[Double]] = {
     source.conf.isTest = true
     val testDF = features2(source)
@@ -423,12 +426,12 @@ class CaffeOnSpark(@transient val sc: SparkContext) extends Serializable {
   }
 
   /**
-   * Extract features from a specific data source.
-   * Features will be saved into DataFrame per configuration.
-   *
-   * @param source input data source
-   * @return Feature data frame
-   */
+    * Extract features from a specific data source.
+    * Features will be saved into DataFrame per configuration.
+    *
+    * @param source input data source
+    * @return Feature data frame
+    */
   def features[T1, T2](source: DataSource[T1, T2]): DataFrame = {
     source.conf.isTest = false
     var featureDF = features2(source)
@@ -443,10 +446,10 @@ class CaffeOnSpark(@transient val sc: SparkContext) extends Serializable {
   }
 
   /**
-   * Extract features from a data source
-   * @param source input data source
-   * @return a data frame
-   */
+    * Extract features from a data source
+    * @param source input data source
+    * @return a data frame
+    */
   private def features2[T1, T2](source: DataSource[T1, T2]): DataFrame = {
     val srcDataRDD = source.makeRDD(sc)
     val conf = source.conf
@@ -511,5 +514,3 @@ class CaffeOnSpark(@transient val sc: SparkContext) extends Serializable {
   }
 
 }
-
-

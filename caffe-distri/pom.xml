@@ -144,7 +144,7 @@
                 <version>2.12.4</version>
                 <configuration>
                     <argLine>
-                        -Djava.library.path=".build_release/lib:${project.basedir}/../caffe-public/distribute/lib:/home/y/lib64:/home/y/lib64/mkl/intel64:/usr/lib64:/lib64"
+                        -Djava.library.path=".build_release/lib:${project.basedir}/build/lib:${project.basedir}/../caffe-public/distribute/lib:/home/y/lib64:/home/y/lib64/mkl/intel64:/usr/lib64:/lib64"
                     </argLine>
                 </configuration>
             </plugin>
