@@ -36,21 +36,21 @@ import java.net._
 import org.apache.spark.rdd._
 import scala.reflect.ClassTag
 
-object IntelCaffeOnSpark {
+object CaffeOnSpark {
   private val log: Logger = LoggerFactory.getLogger(this.getClass)
 
   def bootstrap(conf: Config, sc: SparkContext): Unit = {
     //training if specified
     val caffeSpark = new CaffeOnSpark(sc)
     if (conf.isTraining ){
-      if (conf.solverParameter.hasTestInterval && (conf.solverParameter.getTestInterval() != 0) && (conf.solverParameter.getTestIter(0) != 0)) {
-        val sourceTrain: DataSource[Any,Any] = DataSource.getSource(conf, true).asInstanceOf[DataSource[Any, Any]]
-        val sourceValidation: DataSource[Any,Any] = DataSource.getSource(conf, false).asInstanceOf[DataSource[Any, Any]]
-        caffeSpark.trainWithValidation(sourceTrain, sourceValidation)
-      } else {
+//      if (conf.solverParameter.hasTestInterval && (conf.solverParameter.getTestInterval() != 0) && (conf.solverParameter.getTestIter(0) != 0)) {
+//        val sourceTrain: DataSource[Any,Any] = DataSource.getSource(conf, true).asInstanceOf[DataSource[Any, Any]]
+//        val sourceValidation: DataSource[Any,Any] = DataSource.getSource(conf, false).asInstanceOf[DataSource[Any, Any]]
+//        caffeSpark.trainWithValidation(sourceTrain, sourceValidation)
+//      } else {
         val sourceTrain: DataSource[Any,Any] = DataSource.getSource(conf, true).asInstanceOf[DataSource[Any, Any]]
         caffeSpark.train(sourceTrain)
-      }
+//      }
     }
 
     //feature extraction
@@ -107,7 +107,7 @@ object IntelCaffeOnSpark {
   *
   * @param sc Spark Context
   */
-class IntelCaffeOnSpark(@transient val sc: SparkContext) extends Serializable {
+class CaffeOnSpark(@transient val sc: SparkContext) extends Serializable {
   @transient private val log: Logger = LoggerFactory.getLogger(this.getClass)
   @transient val sqlContext = new sql.SQLContext(sc)
   @transient val floatarray2doubleUDF = udf((float_features: Seq[Float]) => {
@@ -143,7 +143,7 @@ class IntelCaffeOnSpark(@transient val sc: SparkContext) extends Serializable {
       log.info("rank = " + i._1 + ", address = " + i._2.mkString(",") + ", hostname = " + i._3)
     var numExecutors: Int = sc.getExecutorMemoryStatus.size
     val numDriver: Int = if (sc.isLocal) 0 else 1
-    if (conf.clusterSize + numDriver != numExecutors) {
+    if (!sc.isLocal && conf.clusterSize + numDriver != numExecutors) {
       log.error("Requested # of executors: " + conf.clusterSize + " actual # of executors:" + (numExecutors - numDriver) +
         ". Please try to set --conf spark.scheduler.maxRegisteredResourcesWaitingTime with a large value (default 30s)")
       throw new IllegalStateException("actual number of executors is not as expected")
@@ -161,7 +161,7 @@ class IntelCaffeOnSpark(@transient val sc: SparkContext) extends Serializable {
     //Phase 3: set up the processors
     val validation_blob_names = sc.parallelize(0 until conf.clusterSize, conf.clusterSize).map {
       case rank: Int => {
-        val processor = CaffeProcessor.instance[T1, T2]()
+        val processor = CaffeProcessor.instance[T1, T2](rank)
         //start processor w/ the given addresses
         processor.start(bcast_addresses.value)
 
@@ -201,13 +201,13 @@ class IntelCaffeOnSpark(@transient val sc: SparkContext) extends Serializable {
     //Phase 2: find the minimum size of partitions
     var minPartSize = 0
     if (conf.clusterSize > 1) {
-      val sizeRDD = trainDataRDD.mapPartitions {
-        iter => {
+      val sizeRDD = trainDataRDD.mapPartitionsWithIndex {
+        (pId, iter) => {
           val partSize = iter.size
           // Spark decides how data partitions are distributed among executors in this step.
           // synchronize among the executors,
           // to achieve same number of partitions.
-          val processor = CaffeProcessor.instance[T1, T2]()
+          val processor = CaffeProcessor.instance[T1, T2](pId % conf.clusterSize)
           processor.sync()
           Iterator(partSize)
         }
@@ -220,11 +220,11 @@ class IntelCaffeOnSpark(@transient val sc: SparkContext) extends Serializable {
     var continuetrain: Boolean = true
     while (continuetrain) {
       //conduct training with dataRDD
-      continuetrain = trainDataRDD.mapPartitions {
-        iter => {
+      continuetrain = trainDataRDD.mapPartitionsWithIndex {
+        (pId, iter) => {
           var res = false
           //feed training data from iterator
-          val processor = CaffeProcessor.instance[T1, T2]()
+          val processor = CaffeProcessor.instance[T1, T2](pId % conf.clusterSize)
           if (!processor.solversFinished) {
             if (minPartSize > 0) {
               var idx = 0
@@ -317,11 +317,11 @@ class IntelCaffeOnSpark(@transient val sc: SparkContext) extends Serializable {
         (index => (index >= current_partition_count_train*conf.clusterSize) && (index < (current_partition_count_train+1)*conf.clusterSize))
       )
       //Proceed with the training
-      continue = interleaveTrainRDD.mapPartitions {
-        iter => {
+      continue = interleaveTrainRDD.mapPartitionsWithIndex {
+        (pId, iter) => {
           var res = false
           //feed training data from iterator
-          val processor = CaffeProcessor.instance[T1, T2]()
+          val processor = CaffeProcessor.instance[T1, T2](pId % conf.clusterSize)
           if (!processor.solversFinished) {
             res = iter.map { sample => processor.feedQueue(0, sample._2) }.reduce(_ && _)
             processor.solversFinished = !res
@@ -344,7 +344,7 @@ class IntelCaffeOnSpark(@transient val sc: SparkContext) extends Serializable {
         val current_result_array : Array[Row] = interleaveValidationRDD.mapPartitionsWithIndex {
           (index, iter) => {
             //feed validation data from iterator
-            val processor = CaffeProcessor.instance[T1, T2]()
+            val processor = CaffeProcessor.instance[T1, T2](index % conf.clusterSize)
             if (!processor.solversFinished) {
               val res = iter.map { sample => processor.feedQueue(1, sample._2)}.reduce(_ && _)
               processor.solversFinished = !res
@@ -387,8 +387,8 @@ class IntelCaffeOnSpark(@transient val sc: SparkContext) extends Serializable {
     */
   private def shutdownProcessors[T1, T2](conf: Config): Unit = {
     sc.parallelize(0 until conf.clusterSize, conf.clusterSize).map {
-      _ => {
-        val processor = CaffeProcessor.instance[T1, T2]()
+      id => {
+        val processor = CaffeProcessor.instance[T1, T2](id)
         processor.stop()
       }
     }.collect()
@@ -480,17 +480,17 @@ class IntelCaffeOnSpark(@transient val sc: SparkContext) extends Serializable {
     val blobNames = if (conf.isFeature)
       conf.features
     else // this is test mode
-      sc.parallelize(0 until clusterSize, clusterSize).map { _ =>
-        val processor = CaffeProcessor.instance[T1, T2]()
+      sc.parallelize(0 until clusterSize, clusterSize).map { id =>
+        val processor = CaffeProcessor.instance[T1, T2](id)
         processor.getValidationOutputBlobNames()
       }.collect()(0)
     val schema = new StructType(Array(StructField("SampleID", StringType, false)) ++ blobNames.map(name => StructField(name, ArrayType(FloatType), false)))
     log.info("Schema:" + schema)
 
     //Phase 3: feed the processors
-    val featureRDD = srcDataRDD.mapPartitions {
-      iter => {
-        val processor: CaffeProcessor[T1, T2] = CaffeProcessor.instance[T1, T2]()
+    val featureRDD = srcDataRDD.mapPartitionsWithIndex {
+      (pId, iter) => {
+        val processor: CaffeProcessor[T1, T2] = CaffeProcessor.instance[T1, T2](pId % conf.clusterSize)
         val feature_iter: Iterator[Row] =
           if (processor.solversFinished)
             Iterator()
