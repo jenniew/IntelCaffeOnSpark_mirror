@@ -24,6 +24,7 @@ object CaffeOnSparkWithPS {
     var conf = new Config(sc, args)
     bootstrap(conf, sc)
     // TODO: Add exit processing
+    log.info("finish training")
   }
 
   // TODO: delete isLocal
@@ -34,6 +35,7 @@ object CaffeOnSparkWithPS {
       val source = DataSource.getSource(conf, true)
       caffeSpark.train(source, isLocal)
     } else {
+      // TODO: Add test phase implementation
       throw new RuntimeException("haven't implement yet")
     }
   }
@@ -73,25 +75,29 @@ class CaffeOnSparkWithPS(@transient val sc: SparkContext) extends Serializable {
     val conf = source.conf
 
     // Phase 1: Initialize PS client context
-    log.info("Phase 1: Initialize PS client context")
+    log.info("phase 1: Initialize PS client context")
     val psClient = new PSClient(conf.psMasterAddr)
     psClient.setContext("Caffe_On_Spark_PS_" + conf.psWeightVector)
     psClient.bspInitializeContext(conf.clusterSize)
 
-    //val loopRDD = sc.parallelize(0 until conf.clusterSize, conf.clusterSize) // FIXME
+    val workers = sc.parallelize(0 until conf.clusterSize, conf.clusterSize).cache()
     // Phase 2: new one CaffeProcessor object for each node
     log.info(s"phase 02: new one CaffeProcessor object for ${conf.clusterSize} node")
-    sc.parallelize(0 until conf.clusterSize, conf.clusterSize).foreach { rank: Int =>
-      CaffeProcessor.instance[T1, T2](source, rank)
+    workers.foreach { rank: Int =>
+      val processor = CaffeProcessor.instance[T1, T2](source, rank)
+    }
+
+    log.info("initialize weights on each node")
+    workers.foreach { rank: Int =>
+      val processor = CaffeProcessor.instance[T1, T2](rank)
+      processor.caffeNetList(0).initializeWeight()
     }
 
     //Phase 3: set up the processors
     log.info("phase 03: Initialize weights on each node and start each processor")
     // TODO: how to initialize global weight elegantly
-//    val broadWeights = sc.broadcast()
-    sc.parallelize(0 until conf.clusterSize, conf.clusterSize).foreach {rank: Int =>
+    workers.foreach {rank: Int =>
       CaffeProcessor.instance[T1, T2](rank).start(null)
-//      CaffeProcessor.instance[T1, T2](rank).start(broadWeights.value)
     }
 
     if (trainDataRDD.getNumPartitions != conf.clusterSize) {

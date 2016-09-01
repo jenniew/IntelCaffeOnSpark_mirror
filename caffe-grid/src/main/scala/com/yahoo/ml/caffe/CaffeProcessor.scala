@@ -39,7 +39,7 @@ object CaffeProcessor {
   }
   // Assuming it would be always created at this point.
   def instance[T1, T2](rank: Int): CaffeProcessor[T1, T2] = {
-    // TODO: fix this rank not match problem
+    // TODO: fix this rank not match problem in a more elegant way
     if (rankToInstance.containsKey(rank)) {
       rankToInstance.get(rank).asInstanceOf[CaffeProcessor[T1, T2]]
     } else if (!rankToInstance.isEmpty){
@@ -266,7 +266,7 @@ class CaffeProcessor[T1, T2](val source: DataSource[T1, T2],
           dataHolder match {
             case matVector: MatVector => {
               transformer.transform(matVector, data(0))
-	        }
+            }
             case _ => throw new Exception("Unsupported data type for transformer")
           }
         }
@@ -323,13 +323,12 @@ class CaffeProcessor[T1, T2](val source: DataSource[T1, T2],
       val maxIter: Int = caffeNet.getMaxIter(syncIdx)
       caffeNet.init(syncIdx, true)
       for (it <- initIter until maxIter if (tpl != STOP_MARK)) {
-//        log.info("Start Iteration: " + it + ", rank: " + rank)
         tpl = queuePair.Full.take //TODO: Note that BlockingQueue.take may be blocked until not null
         if (tpl == STOP_MARK)  {
           log.info("STOP_MARK: queuePair.Free.put(tpl), rank: " + rank)
           queuePair.Free.put(tpl)
         } else {
-          log.info("CaffeProcessor::doTrain::TrainWithPS, rank: " + rank)
+//          log.info("CaffeProcessor::doTrain::TrainWithPS, rank: " + rank)
           val rs : Boolean = caffeNet.trainWithPS(syncIdx, tpl._2, toDataPtr(tpl._3))
           if (!rs) {
             log.warn("Failed at training at iteration "+it)

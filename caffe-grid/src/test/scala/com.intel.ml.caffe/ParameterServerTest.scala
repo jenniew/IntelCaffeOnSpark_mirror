@@ -39,7 +39,7 @@ object ParameterServerTest {
       "-devices", "1",
       "-connection", "ethernet",
       "-train",
-      "-psMasterAddr", "localhost:55778", //FIXME: reset the port to your ps mini-cluster's for test
+      "-psMasterAddr", "localhost:55778",
       "-psWeightVector", "w-" + Random.nextLong().toString
     )
     // TODO: make sure that test data dir has been generated
@@ -48,7 +48,7 @@ object ParameterServerTest {
     psConf.set(PSConfigKeys.PS_CHECKPOINT_PATH_KEY, "file://" + new File("target/test/data/").getAbsolutePath())
     cluster = new MiniPSCluster.Builder(psConf).masterRpcPort(55778).numSlaves(3).build
 
-    conf = new  com.yahoo.ml.caffe.Config(sc, args)
+    conf = new com.yahoo.ml.caffe.Config(sc, args)
 
     //
     CaffeOnSparkWithPS.bootstrap(conf, sc, true)
