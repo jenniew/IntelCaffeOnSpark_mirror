@@ -1,7 +1,7 @@
 name: "CaffeNet"
 layer {
   name: "data"
-  type: "MemoryData"
+  type: "Data"
   top: "data"
   top: "label"
   include {
@@ -14,14 +14,11 @@ layer {
     mean_value: 117
     mean_value: 123
   }
-  source_class: "com.yahoo.ml.caffe.SeqImageDataSource"
-  memory_data_param {
-    source: "file:caffe-grid/target/seq_image_files/"
-    batch_size: 4
-    channels: 3
-    height: 227
-    width: 227
-    share_in_parallel: false
+
+  data_param {
+    source: "data/mnist_train_lmdb/"
+    batch_size: 100
+    backend: LMDB
   }
 }
 layer {
@@ -39,9 +36,9 @@ layer {
     mean_value: 117
     mean_value: 123
   }
-  source_class: "com.yahoo.ml.caffe.SeqImageDataSource"
+  source_class: "com.yahoo.ml.caffe.LmdbRDD"
   memory_data_param {
-    source: "file:caffe-grid/target/seq_image_files/"
+    source: "file:data/mnist_train_lmdb/"
     batch_size: 2
     channels: 3
     height: 227

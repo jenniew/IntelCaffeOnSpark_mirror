@@ -33,6 +33,7 @@ public class CaffeNetTest {
 
     @BeforeMethod
     public void setUp() throws Exception {
+        System.out.println(System.getProperty("java.library.path"));
         String fullPath = getClass().getClassLoader().getResource("log4j.properties").getPath();
         rootPath = fullPath.substring(0, fullPath.indexOf("caffe-distri/"));
         solver_config_path = rootPath + "caffe-distri/src/test/resources/caffenet_solver.prototxt";
