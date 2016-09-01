@@ -2,6 +2,8 @@
 // Licensed under the terms of the Apache 2.0 license.
 // Please see LICENSE file in the project root for terms.
 #include <vector>
+#include <stdexcept>
+#include <execinfo.h>
 #include "boost/algorithm/string.hpp"
 #include "boost/thread.hpp"
 #include "caffe/caffe.hpp"
@@ -9,6 +11,21 @@
 
 
 namespace caffe {
+
+
+void handler()
+{
+    void *trace_elems[20];
+    int trace_elem_count(backtrace( trace_elems, 20 ));
+    char **stack_syms(backtrace_symbols( trace_elems, trace_elem_count ));
+    for ( int i = 0 ; i < trace_elem_count ; ++i )
+    {
+        LOG(INFO) << stack_syms[i] ;
+    }
+    free( stack_syms );
+
+    exit(1);
+}
 
 template<typename Dtype>
 SocketSyncCPU<Dtype>::SocketSyncCPU(shared_ptr<Solver<Dtype> > root_solver,
@@ -23,6 +40,8 @@ SocketSyncCPU<Dtype>::SocketSyncCPU(shared_ptr<Solver<Dtype> > root_solver,
     diff_recv_(peers.size()),
     iter_count_(0),
     tp(peers.size() < 16 ? peers.size() : 16 ) { // TODO: should make this configurable
+
+  std::set_terminate( handler );
 
   chunk(rank_, &own_offs_, &own_size_);
   for (int peer = 0; peer < peers_.size(); ++peer) {
@@ -100,11 +119,12 @@ template<typename Dtype>
 void SocketSyncCPU<Dtype>::on_start() {
   // Send weights to each node
   iter_count_ ++;
-  LOG(INFO) << "###### iteration: " << this->iter_count_ << "rank:" << rank_;
+  LOG(INFO) << "###### iteration: " << this->iter_count_ << " rank:" << rank_;
   sync();
 }
 
 void write_task(SocketBuffer * socketBuffer_ptr) {
+	LOG(INFO) << "Writting to: " << socketBuffer_ptr->channel_->channel_info;
 	socketBuffer_ptr->Write();
 }
 

@@ -189,14 +189,31 @@ class CaffeOnSpark(@transient val sc: SparkContext) extends Serializable {
     val conf = source.conf
     //Phase 1: repartition RDD if needed
     val origin_part_count = trainDataRDD.partitions.size
-    val desired_part_count = (origin_part_count / conf.clusterSize) * conf.clusterSize
+    if (conf.dataPartitions % conf.clusterSize != 0) {
+      throw new RuntimeException("dataPartitions % clusterSize != 0")
+    }
+    val desired_part_count = conf.dataPartitions
+    log.info("Training dataset partition count: " + origin_part_count + " -> " + desired_part_count)
     if (origin_part_count != desired_part_count) {
       trainDataRDD = trainDataRDD.coalesce(desired_part_count, true)
-      log.info("Training dataset partition count: " + origin_part_count + " -> " + desired_part_count)
     }
-    if (conf.isRddPersistent) {
-      trainDataRDD = trainDataRDD.persist(StorageLevel.DISK_ONLY)
+    trainDataRDD.mapPartitions {iter => {Iterator(iter.size)}}.collect().foreach { size =>
+      if (size == 0) {
+        throw new RuntimeException("empty partition")
+      }
+      log.info("partition_size: " + size)
     }
+
+    //    val origin_part_count = trainDataRDD.partitions.size
+//    val desired_part_count = (origin_part_count / conf.clusterSize) * conf.clusterSize
+//    if (origin_part_count != desired_part_count) {
+//      trainDataRDD = trainDataRDD.coalesce(desired_part_count, true)
+//      log.info("Training dataset partition count: " + origin_part_count + " -> " + desired_part_count)
+//    }
+//    if (conf.isRddPersistent) {
+//      trainDataRDD = trainDataRDD.persist(StorageLevel.DISK_ONLY)
+//    }
+    trainDataRDD = trainDataRDD.persist(StorageLevel.MEMORY_AND_DISK)
 
     //Phase 2: find the minimum size of partitions
     var minPartSize = 0

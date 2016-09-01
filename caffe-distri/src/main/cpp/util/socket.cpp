@@ -35,33 +35,45 @@ struct message_header{
   int size;  // Payload size to follow the header
 };
 
+void send_all(int sockfd, void *vbuffer, int len) {
+    uint8_t* buffer = reinterpret_cast<uint8_t*>(vbuffer);
+    int nsent;
+    while(len > 0) {
+        nsent = write(sockfd, buffer, len);
+        if (nsent == -1) {
+            LOG(ERROR) << "ERROR: Sending message header!";  exit(1);
+        }
+        buffer += nsent;
+        len -= nsent;
+    }
+}
+
+void read_all(int sockfd, void *vbuffer, int len) {
+    uint8_t* buffer = reinterpret_cast<uint8_t*>(vbuffer);
+    int nread;
+    while(len > 0) {
+        nread = read(sockfd, buffer, len);
+        if (nread == -1) {
+           LOG(ERROR) << "ERROR: Reading message header!";
+           exit(1);
+        }
+        buffer += nread;
+        len -= nread;
+    }
+}
+
+
 bool send_message_header(int sockfd, int rank, message_type mt, int ms) {
   message_header mh;
   mh.rank = rank;
   mh.type = mt;
   mh.size = ms;
-  int n = write(sockfd, &mh, sizeof(mh));
-  if (n < 0) {
-    LOG(ERROR) << "ERROR: Sending message header!";    return false;
-  } else if (n < sizeof(mh)) {
-    LOG(ERROR) << "ERROR: Sending partial message header!";
-    return false;
-  }
+  send_all(sockfd, &mh, sizeof(mh));
   return true;
 }
 
 void receive_message_header(int sockfd,message_header * mh) {
-  
-  int n = read(sockfd, mh, sizeof(*mh));
-  if (n < 0) {
-    LOG(ERROR) << "ERROR: Reading message header!";
-    pthread_exit(NULL);
-  }
-  else if (n < sizeof(*mh)) {
-    LOG(ERROR) << "ERROR: Read partial messageheader ["
-               << n <<" of " << sizeof(*mh) << "]";
-    pthread_exit(NULL);
-  }
+    read_all(sockfd, mh, sizeof(*mh));
 }
 
 struct connection_details {
@@ -266,6 +278,7 @@ bool SocketChannel::Connect(string peer) {
         this->client_fd = client_fd;
         this->peer_name = name_port.at(0);
         this->port_no = atoi(name_port.at(1).c_str());
+        this->reset_channel_info();
       }
     }
     attempts++;
@@ -345,6 +358,7 @@ SocketBuffer::SocketBuffer(int rank, SocketChannel* channel,
 }
 
 void SocketBuffer::Write() {
+//boost::mutex::scoped_lock lock(this->channel_->write_mutex_);
 #ifndef CPU_ONLY
     // Copy the buffer to be sent from GPU
     cudaMemcpy(this->buffer_, this->addr_, this->size_,  // NOLINT(caffe/alt_fn)

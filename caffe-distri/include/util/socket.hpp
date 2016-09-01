@@ -8,6 +8,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <boost/thread/pthread/mutex.hpp>
 #include "caffe/caffe.hpp"
 #include "caffe/common.hpp"
 #include "caffe/util/blocking_queue.hpp"
@@ -50,6 +51,12 @@ class SocketBuffer;
 class SocketChannel {
  private:
   int connect_to_peer(string to_peer, string to_port);
+  void reset_channel_info() {
+    std::stringstream sstm;
+    sstm << "peer_name: " << peer_name << " port_no: " << port_no
+         << " client_fd: " << client_fd << " serving_fd: " << serving_fd;
+    channel_info = sstm.str();
+  }
  public:
   SocketChannel();
   ~SocketChannel();
@@ -60,6 +67,9 @@ class SocketChannel {
   int port_no;
   string peer_name;
   size_t size;
+  string channel_info;
+  mutable boost::mutex write_mutex_; // ensure header, data, header, data are sent in sequence. 
+
 };
 
 class SocketBuffer {
@@ -75,11 +85,11 @@ class SocketBuffer {
   const size_t size() const {
     return size_;
   }
+  SocketChannel* channel_;
   // Synchronously writes content to remote peer
   void Write();
   SocketBuffer* Read();
  protected:
-  SocketChannel* channel_;
   uint8_t* addr_;
   uint8_t* buffer_;
   /*const*/ size_t size_;
