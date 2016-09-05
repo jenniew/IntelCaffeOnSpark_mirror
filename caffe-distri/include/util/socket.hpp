@@ -68,8 +68,6 @@ class SocketChannel {
   string peer_name;
   size_t size;
   string channel_info;
-  mutable boost::mutex write_mutex_; // ensure header, data, header, data are sent in sequence. 
-
 };
 
 class SocketBuffer {

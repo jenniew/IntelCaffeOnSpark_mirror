@@ -38,8 +38,7 @@ SocketSyncCPU<Dtype>::SocketSyncCPU(shared_ptr<Solver<Dtype> > root_solver,
     data_recv_(peers.size()),
     diff_send_(peers.size()),
     diff_recv_(peers.size()),
-    iter_count_(0),
-    tp(peers.size() < 16 ? peers.size() : 16 ) { // TODO: should make this configurable
+    iter_count_(0) {
 
   std::set_terminate( handler );
 
@@ -138,9 +137,7 @@ void SocketSyncCPU<Dtype>::on_gradients_ready() {
     if (peer == peers_.size()) {
       peer = 0;
     }
-//    diff_send_[peer]->Write();
-    tp.schedule(boost::bind(write_task, diff_send_[peer].get()));
-
+    diff_send_[peer]->Write();
     peer++;
   }
   // Sum gradients as they are received
@@ -166,10 +163,7 @@ void SocketSyncCPU<Dtype>::sync() {
     if (peer == peers_.size()) {
       peer = 0;
     }
-//    data_send_[peer]->Write();
-
-    tp.schedule(boost::bind(write_task, data_send_[peer].get()));
-
+    data_send_[peer]->Write();
     peer++;
   }
 

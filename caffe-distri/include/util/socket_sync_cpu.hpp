@@ -71,7 +71,6 @@ class SocketSyncCPU : public P2PSyncCPU<Dtype> {
   using Params<Dtype>::data_;
   using Params<Dtype>::diff_;
   int iter_count_;
-  boost::threadpool::pool tp;
   DISABLE_COPY_AND_ASSIGN(SocketSyncCPU);
 };
 
