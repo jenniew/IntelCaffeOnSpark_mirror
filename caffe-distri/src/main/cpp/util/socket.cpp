@@ -358,7 +358,7 @@ SocketBuffer::SocketBuffer(int rank, SocketChannel* channel,
 }
 
 void SocketBuffer::Write() {
-//boost::mutex::scoped_lock lock(this->channel_->write_mutex_);
+boost::mutex::scoped_lock lock(this->channel_->write_mutex_);
 #ifndef CPU_ONLY
     // Copy the buffer to be sent from GPU
     cudaMemcpy(this->buffer_, this->addr_, this->size_,  // NOLINT(caffe/alt_fn)
