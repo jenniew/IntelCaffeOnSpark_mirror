@@ -102,7 +102,7 @@ class CaffeOnSparkWithPS(@transient val sc: SparkContext) extends Serializable {
 
     if (trainDataRDD.getNumPartitions != conf.clusterSize) {
       log.info(s"repartitioning from ${trainDataRDD.getNumPartitions} to ${conf.clusterSize}")
-      trainDataRDD.repartition(conf.clusterSize)
+      trainDataRDD = trainDataRDD.repartition(conf.clusterSize)
     }
 
     //Phase 4: feed the processor
