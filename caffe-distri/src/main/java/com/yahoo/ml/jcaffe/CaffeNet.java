@@ -109,9 +109,10 @@ public class CaffeNet extends BaseObject {
         psClient.setContext(psContext);
 
         if (nodeRank == 0) { // create global gradient vector on the PS with overwrite
-            int numFeatures = this.getLocalGradients().length; // TODO: further check
-            LOG.info("create vector={}, size={}", globalVector, numFeatures);
-            psClient.createVector(globalVec, true, numFeatures, DataType.Float, true);
+            long paramsLen = this.getParamsLength();
+            LOG.info("create vector={}, size={}", globalVector, paramsLen);
+            // TODO: type cast from long (original type is size_t in C++) to int is unsafe
+            psClient.createVector(globalVec, true, (int) paramsLen, DataType.Float, true);
             // set local weights to PS-side global vector
             LOG.info("set caffe weights to PS side global vector {}", globalVector);
             psClient.updateVector(globalVector, new org.parameterserver.protocol.FloatArray(this
@@ -279,6 +280,11 @@ public class CaffeNet extends BaseObject {
         LOG.info("CaffeNet: send close ps client request");
         psClient.close();
     }
+
+    /**
+     * Get network parameters' length
+     */
+    public native long getParamsLength();
 
     /**
      * Get weights from local caffe.

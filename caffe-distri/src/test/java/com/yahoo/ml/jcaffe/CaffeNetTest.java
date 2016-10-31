@@ -197,6 +197,13 @@ public class CaffeNetTest {
     }
 
     @Test
+    public void getParamsLengthJNITest() {
+        float[] weights = net.getLocalWeights();
+        long netParamsLength = net.getParamsLength();
+        assertEquals(weights.length, netParamsLength);
+    }
+
+    @Test
     public void getSetWeightJNITest() throws Exception {
         float[] weights = net.getLocalWeights();
 
