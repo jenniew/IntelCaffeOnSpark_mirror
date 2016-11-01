@@ -224,6 +224,12 @@ public class CaffeNet extends BaseObject {
             Utils.arrayScale(gradients, scale);
             scaleTime = System.currentTimeMillis() - scaleTimeStart;
 
+            psClient.bspSync();
+            if (nodeRank == 0) {
+                psClient.resetVector(globalVec);
+            }
+            psClient.bspSync();
+
             long a2vTimeStart = System.currentTimeMillis();
             psClient.add2Vector(globalVec, new org.parameterserver.protocol.FloatArray(gradients));
             a2vTime = System.currentTimeMillis() - a2vTimeStart;
