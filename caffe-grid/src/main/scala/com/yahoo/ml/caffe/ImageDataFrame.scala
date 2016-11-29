@@ -59,7 +59,8 @@ class ImageDataFrame(conf: Config, layerId: Int, isTrain: Boolean)
         val channels  : Int = if (!has_channels) 0 else row.getAs[Int]("channels")
         val height  : Int = if (!has_height) 0 else row.getAs[Int]("height")
         val width : Int = if (!has_width) 0 else row.getAs[Int]("width")
-        val encoded : Boolean = if (!has_encoded) memdatalayer_param.getImageEncoded() else row.getAs[Boolean]("encoded")
+        //val encoded : Boolean = if (!has_encoded) memdatalayer_param.getImageEncoded() else row.getAs[Boolean]("encoded")
+        val encoded : Boolean = if (!has_encoded) false else row.getAs[Boolean]("encoded")
         val data : Array[Byte] = row.getAs[Any]("data") match {
           case str: String => str.getBytes
           case arr: Array[Byte@unchecked] => arr
